@@ -64,19 +64,26 @@ final class MontyChatViewModel {
         streamTask = Task { [weak self] in
             guard let self else { return }
             let session = await self.ensureSession(propertyId: propertyId)
-            // Persist the user turn as soon as we have a session.
+            // Persist the user turn BEFORE opening the stream so the DB write
+            // can't race the assistant reply. Best-effort — if it fails we
+            // still proceed (the wire-level `conversationHistory` below is
+            // the primary context source).
             if let session {
-                Task { @MainActor in
-                    await MontyResidentAppService.insertChatMessage(
-                        sessionId: session,
-                        role: "user",
-                        content: sourceText,
-                        auditId: nil,
-                        proposedTicket: nil,
-                        proposalStatus: nil
-                    )
-                }
+                await MontyResidentAppService.insertChatMessage(
+                    sessionId: session,
+                    role: "user",
+                    content: sourceText,
+                    auditId: nil,
+                    proposedTicket: nil,
+                    proposalStatus: nil
+                )
             }
+
+            // Snapshot the recent on-screen history (excluding the current
+            // outgoing message + the in-flight assistant placeholder) so the
+            // service can forward it as `conversationHistory`. We build this
+            // here, on the main actor, to avoid races with later updates.
+            let historySnapshot = self.messages.filter { $0.id != assistantId }
 
             var wasCancelled = false
             do {
@@ -84,7 +91,7 @@ final class MontyChatViewModel {
                     message: sourceText,
                     propertyId: propertyId,
                     sessionId: session,
-                    history: self.messages
+                    history: historySnapshot
                 ) {
                     switch event {
                     case .delta(let chunk):

@@ -357,7 +357,43 @@ enum MontyChatService {
                     if let sessionId, !sessionId.isEmpty {
                         body["sessionId"] = sessionId
                     }
-                    _ = history // we persist turns explicitly via chat_messages
+
+                    // Build conversationHistory from the in-memory chat.
+                    // The server uses this as the primary context source so
+                    // short follow-ups like "Yes" / "Sure" / "Go ahead" land
+                    // with the right prior turn (the offer to open a ticket)
+                    // instead of being interpreted in isolation.
+                    //
+                    // Rules:
+                    //  - Skip the current outgoing message (`message`).
+                    //  - Skip the in-flight assistant placeholder (empty +
+                    //    streaming).
+                    //  - Skip pure-error bubbles with no real content.
+                    //  - Cap to the most recent 20 turns to keep the
+                    //    payload small.
+                    var conversationHistory: [[String: String]] = []
+                    for msg in history {
+                        if msg.isStreaming { continue }
+                        let trimmed = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty { continue }
+                        if msg.role == .user && trimmed == message.trimmingCharacters(in: .whitespacesAndNewlines) {
+                            // Don't echo the message we're sending now.
+                            continue
+                        }
+                        conversationHistory.append([
+                            "role": msg.role.rawValue,
+                            "content": trimmed,
+                        ])
+                    }
+                    if conversationHistory.count > 20 {
+                        conversationHistory = Array(conversationHistory.suffix(20))
+                    }
+                    if !conversationHistory.isEmpty {
+                        body["conversationHistory"] = conversationHistory
+                    }
+                    #if DEBUG
+                    print("[MontyChat] sending conversationHistory turns=\(conversationHistory.count) message=\(String(message.prefix(60)))")
+                    #endif
 
                     var req = URLRequest(url: url)
                     req.httpMethod = "POST"

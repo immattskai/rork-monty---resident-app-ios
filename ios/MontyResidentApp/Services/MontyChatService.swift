@@ -270,10 +270,27 @@ nonisolated func parseSSEFrame(_ frame: String) -> [ChatStreamEvent] {
         events.append(.meta(complexity: complexity))
     }
     if let choices = json["choices"] as? [[String: Any]],
-       let delta = choices.first?["delta"] as? [String: Any],
-       let content = delta["content"] as? String,
-       !content.isEmpty {
-        events.append(.delta(content))
+       let delta = choices.first?["delta"] as? [String: Any] {
+        #if DEBUG
+        let deltaKeys = Array(delta.keys)
+        let hasContent = (delta["content"] as? String).map { !$0.isEmpty } ?? false
+        let toolCalls = delta["tool_calls"] as? [[String: Any]]
+        let hasToolCalls = (toolCalls?.isEmpty == false)
+        if hasToolCalls {
+            for tc in toolCalls ?? [] {
+                let fn = tc["function"] as? [String: Any]
+                let name = fn?["name"] as? String
+                let args = fn?["arguments"] as? String
+                let argsPreview = args.map { String($0.prefix(200)) } ?? ""
+                print("[MontyChat][SSE] delta keys=\(deltaKeys) hasContent=\(hasContent) toolCall name=\(name ?? "nil") argsChunk=\(argsPreview)")
+            }
+        } else {
+            print("[MontyChat][SSE] delta keys=\(deltaKeys) hasContent=\(hasContent) toolCalls=false")
+        }
+        #endif
+        if let content = delta["content"] as? String, !content.isEmpty {
+            events.append(.delta(content))
+        }
     }
     return events
 }
@@ -381,19 +398,26 @@ enum MontyChatService {
                                 case .delta: deltaCount += 1
                                 case .proposedTicket: sawProposal = true
                                 case .auditId: sawAudit = true
-                                case .done: sawDone = true
+                                case .done:
+                                    sawDone = true
+                                    #if DEBUG
+                                    print("[MontyChat][SSE] saw [DONE] — continuing to drain trailing frames")
+                                    #endif
                                 case .meta: break
                                 }
                                 continuation.yield(event)
-                                if case .done = event {
-                                    return
-                                }
+                                // Note: we intentionally do NOT exit on .done.
+                                // The backend may emit proposedTicket / auditId
+                                // frames AFTER [DONE] (upstream OpenRouter
+                                // forwards its [DONE] before the server flushes
+                                // its post-processed meta). Keep reading until
+                                // the HTTP stream actually closes.
                             }
                             try Task.checkCancellation()
                         }
                     }
 
-                    streamLoop: for try await byte in bytes {
+                    for try await byte in bytes {
                         try Task.checkCancellation()
                         totalBytes += 1
                         pending.append(byte)
@@ -403,7 +427,8 @@ enum MontyChatService {
                             let frames = buffer.append(pending)
                             pending.removeAll(keepingCapacity: true)
                             try drainFrames(frames)
-                            if sawDone { break streamLoop }
+                            // Keep reading past [DONE] until the HTTP body
+                            // actually closes — see drainFrames note.
                         }
                     }
                     // End-of-stream flush.

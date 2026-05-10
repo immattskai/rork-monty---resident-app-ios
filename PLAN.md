@@ -1,38 +1,24 @@
-# Fix Ask Monty silent drop: diagnostics, buffered SSE, no invented copy
+# Keep Monty's stream alive past [DONE] so the ticket proposal renders
 
-Land the fix in the exact order you specified. No fictional-shape parsing, no invented assistant copy.
+**The problem**
 
-### 1. Diagnostics first
-- [x] Log a 200-char preview of every raw SSE frame in DEBUG.
-- [x] Log `Array(json.keys)` for every parsed frame in DEBUG.
-- [x] Log a one-line summary on stream end (bytes, frames, deltas, sawProposal, sawAudit, sawDone).
+When you ask Monty about something like "ants in my room," the server sometimes sends its `[DONE]` marker *before* the actual ticket proposal. Right now the app stops listening as soon as it sees `[DONE]`, so the proposal arrives after we've already hung up — the bubble shows nothing and feels like Monty froze.
 
-### 2. Stop inventing assistant copy
-- [x] Deleted the `"I didn't catch that…"` fallback.
-- [x] Deleted the `"Request was cancelled…"` invented string.
-- [x] Empty-stream + cancelled paths now surface a real error bubble (`"Couldn't reach Monty — tap to retry."`) with the existing Retry action.
-- [x] Grep confirmed no other invented assistant copy in the iOS repo.
+**What I'll change**
 
-### 3. Replace `bytes.lines` with a real SSE parser
-- [x] New `SSEFrameBuffer` accumulates bytes and splits on `\n\n` / `\r\n\r\n`.
-- [x] `parseSSEFrame` joins multi-`data:` lines per spec and yields events.
-- [x] JSON parse failures on fully-assembled frames are logged loudly in DEBUG.
-- [x] `[DONE]` handling unchanged.
+- Make the chat keep reading from the server until it actually closes the connection, even after `[DONE]` is seen. Any ticket proposal or audit info that arrives in the tail will now be picked up.
+- Add detailed behind-the-scenes logging for the tool-call frames (function name, argument chunks, whether there's text vs. only a tool call) so if this ever silently drops again we'll see exactly where in the stream.
+- Log a final summary that reflects whether a proposal/audit landed even after `[DONE]`.
 
-### 4. Verify `decodeProposedTicket`
-- [x] Unit test for full-draft payload (no clarifying_question).
-- [x] Unit test for clarifying-only payload.
-- [x] Unit test for rejection of empty payloads.
+**What stays the same**
 
-### 5. Regression test for the full stream
-- [x] Hand-built byte stream covering complexity meta, three deltas, proposedTicket, auditId, [DONE].
-- [x] Split into two reads with the split landing mid-frame.
-- [x] Asserts content matches exactly, proposal/audit/done all present, no invented copy leaks.
-- [x] Extra test for CRLF separator.
+- No design, copy, layout, or dark-mode changes.
+- No backend changes.
+- Ticket creation, vendor cards, verify/escalate, and the proposal card all keep working exactly as today.
 
-### 6. Explicitly NOT done
-- No wrapped envelopes, no `event:` line handling, no JSON fallback path, no fictional shape branches.
+**How we'll know it worked**
 
-### Validation
-- [x] `runChecks ios` passed.
-- [ ] Re-send "Bugs in my room" and share the DEBUG frame log so we can confirm which of (A)/(B)/(C) was actually happening.
+- Asking "there are ants in my room" now shows the ticket proposal card.
+- The debug summary reports `proposal=true`.
+- No fallback/error bubble appears.
+

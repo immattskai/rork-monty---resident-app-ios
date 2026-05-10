@@ -1,0 +1,10 @@
+{
+  "$schema": "https://rork.com/schema/rork.json",
+  "apps": [
+    {
+      "name": "Monty - Resident App",
+      "path": "ios",
+      "framework": "swift"
+    }
+  ]
+}

@@ -13,10 +13,14 @@ nonisolated struct ChatMessage: Identifiable, Hashable, Sendable {
     var proposedTicket: ChatProposedTicket?
     /// True after the user dismissed the proposal with "Not now".
     var proposalDeclined: Bool
-    /// Server audit id for this assistant reply (Verify / Escalate).
+    /// Server audit id for this assistant reply (links the escalation ticket
+    /// back to the original AI exchange for staff context).
     var auditId: String?
-    /// Verify/escalate state for the trust badge.
+    /// State of the resident's "talk to a human" escalation control.
     var verifyState: AIVerifyState
+    /// Ticket id created when the resident asked to talk to a human (so the
+    /// confirmation row can deep-link into it).
+    var escalationTicketId: String?
     /// True while we're processing the proposal confirmation.
     var isCreatingTicket: Bool
     /// User-facing error string (shown in-bubble with a Retry).
@@ -29,6 +33,9 @@ nonisolated struct ChatMessage: Identifiable, Hashable, Sendable {
         case assistant
     }
 
+    /// Lifecycle of the escalation control. (`verifying` / `verified` are
+    /// retained for source/binary compatibility with persisted history but
+    /// are no longer surfaced in the resident app UI.)
     enum AIVerifyState: String, Sendable, Hashable {
         case idle
         case verifying
@@ -49,6 +56,7 @@ nonisolated struct ChatMessage: Identifiable, Hashable, Sendable {
         proposalDeclined: Bool = false,
         auditId: String? = nil,
         verifyState: AIVerifyState = .idle,
+        escalationTicketId: String? = nil,
         isCreatingTicket: Bool = false,
         errorText: String? = nil,
         sourceUserText: String? = nil
@@ -63,6 +71,7 @@ nonisolated struct ChatMessage: Identifiable, Hashable, Sendable {
         self.proposalDeclined = proposalDeclined
         self.auditId = auditId
         self.verifyState = verifyState
+        self.escalationTicketId = escalationTicketId
         self.isCreatingTicket = isCreatingTicket
         self.errorText = errorText
         self.sourceUserText = sourceUserText

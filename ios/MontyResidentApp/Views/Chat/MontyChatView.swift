@@ -16,7 +16,7 @@ final class MontyChatViewModel {
 
     private var streamTask: Task<Void, Never>?
     private var ticketCreationTasks: [UUID: Task<Void, Never>] = [:]
-    private var verifyTasks: [UUID: Task<Void, Never>] = [:]
+    private var escalationTasks: [UUID: Task<Void, Never>] = [:]
 
     func send(propertyId: String, unitId: String?, text: String? = nil) {
         let raw = (text ?? input).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -314,38 +314,62 @@ final class MontyChatViewModel {
         }
     }
 
-    // MARK: - Verify / Escalate (AI Trust Layer)
+    // MARK: - Talk to a human (resident escalation)
+    //
+    // Replaces the old Verify / Escalate trust-layer controls. On any
+    // informational AI reply, the resident can open a general inquiry ticket
+    // prefilled with the original question and Monty's answer, tied to the
+    // same auditId so the office sees the AI exchange for context.
+    func escalateToHuman(messageId: UUID, propertyId: String) {
+        guard let residentId = MontyResidentAppService.currentUserId() else {
+            update(messageId) { $0.errorText = ChatFriendlyError.auth.residentMessage }
+            return
+        }
+        guard let msg = messages.first(where: { $0.id == messageId }) else { return }
+        guard let auditId = msg.auditId, !auditId.isEmpty else { return }
+        let question = (msg.sourceUserText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let answer = msg.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !answer.isEmpty else { return }
 
-    func verify(messageId: UUID) {
-        guard let auditId = messages.first(where: { $0.id == messageId })?.auditId else { return }
-        update(messageId) { $0.verifyState = .verifying }
-        verifyTasks[messageId]?.cancel()
-        verifyTasks[messageId] = Task { [weak self] in
+        let description = Self.buildEscalationDescription(question: question, answer: answer)
+        let title = Self.buildEscalationTitle(from: question)
+
+        update(messageId) { $0.verifyState = .escalating; $0.errorText = nil }
+        escalationTasks[messageId]?.cancel()
+        escalationTasks[messageId] = Task { [weak self] in
             guard let self else { return }
-            defer { self.verifyTasks[messageId] = nil }
+            defer { self.escalationTasks[messageId] = nil }
             do {
-                _ = try await MontyResidentAppService.verifyAIResponse(auditId: auditId)
-                self.update(messageId) { $0.verifyState = .verified }
+                let result = try await MontyResidentAppService.createTicketFromChat(
+                    title: title,
+                    description: description,
+                    category: "general",
+                    priority: "low",
+                    issueType: "inquiry",
+                    propertyId: propertyId,
+                    residentId: residentId,
+                    auditId: auditId
+                )
+                self.update(messageId) {
+                    $0.verifyState = .escalated
+                    $0.escalationTicketId = result.ticket.id
+                }
             } catch {
                 self.update(messageId) { $0.verifyState = .failed }
             }
         }
     }
 
-    func escalate(messageId: UUID, reason: String? = nil) {
-        guard let auditId = messages.first(where: { $0.id == messageId })?.auditId else { return }
-        update(messageId) { $0.verifyState = .escalating }
-        verifyTasks[messageId]?.cancel()
-        verifyTasks[messageId] = Task { [weak self] in
-            guard let self else { return }
-            defer { self.verifyTasks[messageId] = nil }
-            do {
-                _ = try await MontyResidentAppService.escalateAIResponse(auditId: auditId, reason: reason)
-                self.update(messageId) { $0.verifyState = .escalated }
-            } catch {
-                self.update(messageId) { $0.verifyState = .failed }
-            }
-        }
+    private static func buildEscalationTitle(from question: String) -> String {
+        let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return "Follow-up needed" }
+        let snippet = q.count > 60 ? String(q.prefix(60)).trimmingCharacters(in: .whitespacesAndNewlines) + "…" : q
+        return "Follow-up needed: \(snippet)"
+    }
+
+    private static func buildEscalationDescription(question: String, answer: String) -> String {
+        let q = question.isEmpty ? "(question not captured)" : question
+        return "I asked: \"\(q)\".\nMonty said: \"\(answer)\".\nI still need help."
     }
 
     // MARK: - Helpers
@@ -403,8 +427,7 @@ struct MontyChatView: View {
                                     onOpenTicket: { id in app.pendingTicketDetailId = id },
                                     onConfirmProposal: { confirmProposal(messageId: msg.id) },
                                     onDeclineProposal: { vm.declineProposal(messageId: msg.id) },
-                                    onVerify: { vm.verify(messageId: msg.id) },
-                                    onEscalate: { vm.escalate(messageId: msg.id) },
+                                    onEscalate: { escalateToHuman(messageId: msg.id) },
                                     onRetry: { retry(messageId: msg.id) }
                                 )
                                 .id(msg.id)
@@ -583,6 +606,11 @@ struct MontyChatView: View {
         guard let propertyId = app.activePropertyId else { return }
         vm.retry(messageId: messageId, propertyId: propertyId, unitId: app.activeUnitId)
     }
+
+    private func escalateToHuman(messageId: UUID) {
+        guard let propertyId = app.activePropertyId else { return }
+        vm.escalateToHuman(messageId: messageId, propertyId: propertyId)
+    }
 }
 
 // MARK: - Message bubble
@@ -592,7 +620,6 @@ private struct MessageBubble: View {
     let onOpenTicket: (String) -> Void
     let onConfirmProposal: () -> Void
     let onDeclineProposal: () -> Void
-    let onVerify: () -> Void
     let onEscalate: () -> Void
     let onRetry: () -> Void
 
@@ -685,12 +712,24 @@ private struct MessageBubble: View {
                                 .padding(.top, 2)
                         }
 
+                        // Resident escalation control: only on informational
+                        // AI replies (we have an answer + audit id, no ticket
+                        // proposal, no created ticket, no error). When the
+                        // assistant already drafted a ticket the Yes / Not
+                        // now card is the escalation path — don't duplicate.
                         if message.auditId != nil
                             && message.errorText == nil
                             && !message.isStreaming
-                            && !message.content.isEmpty {
-                            AITrustBadge(state: message.verifyState, onVerify: onVerify, onEscalate: onEscalate)
-                                .padding(.top, 4)
+                            && !message.content.isEmpty
+                            && message.proposedTicket == nil
+                            && message.createdTicket == nil {
+                            TalkToHumanControl(
+                                state: message.verifyState,
+                                ticketId: message.escalationTicketId,
+                                onEscalate: onEscalate,
+                                onOpenTicket: onOpenTicket
+                            )
+                            .padding(.top, 4)
                         }
                     }
                     Spacer(minLength: 0)
@@ -1049,56 +1088,84 @@ struct VendorOutreachPrompt: View {
     }
 }
 
-// MARK: - AI Trust Badge (Verify / Escalate)
-
-private struct AITrustBadge: View {
+// MARK: - Talk to a human control
+//
+// Resident-facing replacement for the old Verify / Escalate trust badge.
+// One button on informational AI replies; hidden entirely when the assistant
+// already produced a proposedTicket (Yes / Not now is the escalation path).
+private struct TalkToHumanControl: View {
     let state: ChatMessage.AIVerifyState
-    let onVerify: () -> Void
+    let ticketId: String?
     let onEscalate: () -> Void
+    let onOpenTicket: (String) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Label("AI answer", systemImage: "sparkles")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.textMuted)
-                .labelStyle(.titleAndIcon)
-            Spacer(minLength: 4)
-            switch state {
-            case .verified:
-                badge("Verified", icon: "checkmark.seal.fill", color: Theme.success)
-            case .escalated:
-                badge("Escalated", icon: "person.fill.questionmark", color: Theme.info)
-            case .verifying, .escalating:
-                ProgressView().controlSize(.mini).tint(Theme.textSecondary)
-            case .idle, .failed:
-                Button(action: onVerify) {
-                    badge("Verify", icon: "checkmark", color: Theme.textSecondary, filled: false)
+        switch state {
+        case .escalated:
+            sentRow
+        case .escalating:
+            inflightRow
+        case .idle, .verifying, .verified, .failed:
+            actionRow
+        }
+    }
+
+    private var actionRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: onEscalate) {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.fill.questionmark")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("This didn't help — talk to a human")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .buttonStyle(.plain)
-                Button(action: onEscalate) {
-                    badge("Escalate", icon: "person.fill.questionmark", color: Theme.textSecondary, filled: false)
-                }
-                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Theme.surface))
+                .overlay(Capsule().stroke(Theme.border, lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
+            if state == .failed {
+                Text("Couldn't send. Tap to try again.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.danger)
             }
         }
     }
 
-    private func badge(_ label: String, icon: String, color: Color, filled: Bool = true) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
+    private var inflightRow: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini).tint(Theme.textSecondary)
+            Text("Sending to your team…")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textMuted)
         }
-        .foregroundStyle(filled ? color : Theme.textSecondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule().fill(filled ? color.opacity(0.14) : Theme.surface)
-        )
-        .overlay(
-            Capsule().stroke(filled ? Color.clear : Theme.border, lineWidth: 0.5)
-        )
+    }
+
+    private var sentRow: some View {
+        Button {
+            if let ticketId, !ticketId.isEmpty { onOpenTicket(ticketId) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.success)
+                Text("Sent to your team")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                if ticketId != nil {
+                    Text("View ticket")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.info)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.info)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(ticketId == nil)
     }
 }
 

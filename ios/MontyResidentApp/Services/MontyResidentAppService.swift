@@ -352,7 +352,8 @@ enum MontyResidentAppService {
         priority: String?,
         issueType: String?,
         propertyId: String,
-        residentId: String
+        residentId: String,
+        auditId: String? = nil
     ) async throws -> CreateTicketFromChatResult {
         var ticketBody: [String: Any] = [
             "title": title,
@@ -363,11 +364,19 @@ enum MontyResidentAppService {
         if let issueType, !issueType.isEmpty {
             ticketBody["issue_type"] = issueType
         }
-        let body: [String: Any] = [
+        if let auditId, !auditId.isEmpty {
+            // Server uses this to thread the resident's escalation back to the
+            // original AI exchange in the admin audit page.
+            ticketBody["ai_audit_id"] = auditId
+        }
+        var body: [String: Any] = [
             "ticket": ticketBody,
             "propertyId": propertyId,
             "residentId": residentId,
         ]
+        if let auditId, !auditId.isEmpty {
+            body["auditId"] = auditId
+        }
 
         let data = try await invokeFunctionWithRetry(
             name: "create-ticket-from-chat",

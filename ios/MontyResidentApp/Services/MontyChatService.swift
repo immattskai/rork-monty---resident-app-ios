@@ -79,11 +79,22 @@ nonisolated struct ChatTicket: Codable, Hashable, Sendable {
 /// Proposed ticket payload emitted by the backend on the chat-with-ai SSE
 /// stream. Confirmed by the user via the TicketProposalCard.
 nonisolated struct ChatProposedTicket: Codable, Hashable, Sendable {
-    var title: String
-    var description: String
+    var title: String?
+    var description: String?
     var category: String?
     var priority: String?
     var issue_type: String?
+    /// Backend may emit a follow-up question instead of (or alongside) a draft
+    /// ticket. The chat surface renders this as the assistant text bubble when
+    /// no `title` is present (matches the web behaviour).
+    var clarifying_question: String?
+
+    /// True if the proposal carries enough info to render a confirmable ticket
+    /// card. A clarifying-only proposal returns false — we surface the question
+    /// in the bubble text instead.
+    var hasDraftTicket: Bool {
+        (title?.isEmpty == false)
+    }
 }
 
 nonisolated enum ChatStreamEvent: Sendable {
@@ -148,6 +159,7 @@ enum MontyChatService {
     static func stream(
         message: String,
         propertyId: String,
+        sessionId: String?,
         history: [ChatMessage]
     ) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
@@ -161,12 +173,15 @@ enum MontyChatService {
                         throw SupabaseError.badURL
                     }
 
-                    let body: [String: Any] = [
+                    var body: [String: Any] = [
                         "message": message,
                         "propertyId": propertyId,
                         "contextLevel": "full",
                     ]
-                    _ = history // server-side session manages history
+                    if let sessionId, !sessionId.isEmpty {
+                        body["sessionId"] = sessionId
+                    }
+                    _ = history // we persist turns explicitly via chat_messages
 
                     var req = URLRequest(url: url)
                     req.httpMethod = "POST"
@@ -246,16 +261,28 @@ enum MontyChatService {
     }
 
     private static func decodeProposedTicket(_ dict: [String: Any]) -> ChatProposedTicket? {
-        guard let title = dict["title"] as? String, !title.isEmpty,
-              let description = dict["description"] as? String else {
-            return nil
-        }
+        // Accept the frame as long as ANY meaningful field is present. The
+        // backend may emit a clarifying-only proposal (no title yet) when it
+        // needs one more detail before drafting a ticket — those used to be
+        // silently dropped.
+        let title = (dict["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let description = (dict["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let category = dict["category"] as? String
+        let priority = dict["priority"] as? String
+        let issueType = (dict["issue_type"] as? String) ?? (dict["issueType"] as? String)
+        let clarifying = (dict["clarifying_question"] as? String) ?? (dict["clarifyingQuestion"] as? String)
+
+        let hasAny = [title, description, category, priority, issueType, clarifying]
+            .contains { ($0?.isEmpty == false) }
+        guard hasAny else { return nil }
+
         return ChatProposedTicket(
             title: title,
             description: description,
-            category: dict["category"] as? String,
-            priority: dict["priority"] as? String,
-            issue_type: dict["issue_type"] as? String ?? dict["issueType"] as? String
+            category: category,
+            priority: priority,
+            issue_type: issueType,
+            clarifying_question: clarifying
         )
     }
 }

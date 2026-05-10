@@ -8,6 +8,12 @@ final class MontyChatViewModel {
     var input: String = ""
     var isSending: Bool = false
 
+    /// Server-side chat session id. Created lazily on the first send so the
+    /// model can thread context across turns. Best-effort — we keep working
+    /// without it if the table doesn't exist on this install.
+    private var sessionId: String?
+    private var sessionInflight: Task<String?, Never>?
+
     private var streamTask: Task<Void, Never>?
     private var ticketCreationTasks: [UUID: Task<Void, Never>] = [:]
     private var verifyTasks: [UUID: Task<Void, Never>] = [:]
@@ -30,6 +36,19 @@ final class MontyChatViewModel {
         beginAssistantStream(propertyId: propertyId, unitId: unitId, sourceText: raw)
     }
 
+    private func ensureSession(propertyId: String) async -> String? {
+        if let s = sessionId { return s }
+        if let t = sessionInflight { return await t.value }
+        let task = Task { @MainActor [propertyId] in
+            await MontyResidentAppService.createChatSession(propertyId: propertyId)
+        }
+        sessionInflight = task
+        let s = await task.value
+        sessionInflight = nil
+        if let s { sessionId = s }
+        return s
+    }
+
     private func beginAssistantStream(propertyId: String, unitId: String?, sourceText: String) {
         let assistantId = UUID()
         messages.append(ChatMessage(
@@ -44,10 +63,27 @@ final class MontyChatViewModel {
         streamTask?.cancel()
         streamTask = Task { [weak self] in
             guard let self else { return }
+            let session = await self.ensureSession(propertyId: propertyId)
+            // Persist the user turn as soon as we have a session.
+            if let session {
+                Task { @MainActor in
+                    await MontyResidentAppService.insertChatMessage(
+                        sessionId: session,
+                        role: "user",
+                        content: sourceText,
+                        auditId: nil,
+                        proposedTicket: nil,
+                        proposalStatus: nil
+                    )
+                }
+            }
+
+            var wasCancelled = false
             do {
                 for try await event in MontyChatService.stream(
                     message: sourceText,
                     propertyId: propertyId,
+                    sessionId: session,
                     history: self.messages
                 ) {
                     switch event {
@@ -56,37 +92,169 @@ final class MontyChatViewModel {
                     case .auditId(let id):
                         self.update(assistantId) { $0.auditId = id }
                     case .proposedTicket(let pt):
-                        self.update(assistantId) { $0.proposedTicket = pt }
+                        self.mergeProposal(pt, into: assistantId)
                     case .meta, .done:
                         break
                     }
                 }
             } catch is CancellationError {
-                // ignore
+                wasCancelled = true
             } catch {
                 let friendly = ChatFriendlyError.map(error)
                 self.update(assistantId) { $0.errorText = friendly.residentMessage }
             }
-            self.update(assistantId) { msg in
-                msg.isStreaming = false
-                // Drop a fully-empty assistant bubble that has no proposal,
-                // no error, and no audit id (e.g. cancelled before any chunk).
-                if msg.content.isEmpty
-                    && msg.proposedTicket == nil
-                    && msg.errorText == nil
-                    && msg.auditId == nil {
-                    msg.errorText = nil
+
+            // Final pass: sanitize text, extract any legacy inline action
+            // blocks, and apply the proposal-only / empty-stream fallbacks.
+            // Critically, the assistant bubble is NEVER removed — silent
+            // failures used to vanish; now they always show a friendly
+            // recovery message.
+            self.finalizeAssistantBubble(assistantId, wasCancelled: wasCancelled)
+
+            // Persist the assistant turn.
+            if let session,
+               let msg = self.messages.first(where: { $0.id == assistantId }) {
+                let status: String? = msg.proposedTicket == nil ? nil : "pending"
+                Task { @MainActor [content = msg.content, audit = msg.auditId, proposal = msg.proposedTicket] in
+                    await MontyResidentAppService.insertChatMessage(
+                        sessionId: session,
+                        role: "assistant",
+                        content: content,
+                        auditId: audit,
+                        proposedTicket: proposal,
+                        proposalStatus: status
+                    )
                 }
             }
-            // Remove if it ended up totally empty.
-            if let i = self.messages.firstIndex(where: { $0.id == assistantId }),
-               self.messages[i].content.isEmpty,
-               self.messages[i].proposedTicket == nil,
-               self.messages[i].errorText == nil,
-               self.messages[i].auditId == nil {
-                self.messages.remove(at: i)
-            }
+
             self.isSending = false
+        }
+    }
+
+    /// Final cleanup pass on a finished assistant bubble. Sanitizes the
+    /// streamed text, promotes any legacy inline `create_ticket` JSON to a
+    /// proper proposal, and fills in fallback copy so the user never sees
+    /// just a dead "thinking" indicator.
+    private func finalizeAssistantBubble(_ id: UUID, wasCancelled: Bool) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        var msg = messages[idx]
+        msg.isStreaming = false
+
+        // 1) Strip inline action JSON / fences and promote a legacy
+        //    create_ticket action to a proposal if no meta proposal arrived.
+        if !msg.content.isEmpty {
+            let extracted = ChatActionExtractor.extract(from: msg.content)
+            if extracted.cleaned != msg.content {
+                msg.content = extracted.cleaned
+            }
+            if msg.proposedTicket == nil {
+                if let action = extracted.actions.first(where: { $0.name == "create_ticket" }) {
+                    msg.proposedTicket = ChatProposedTicket(
+                        title: action.payload["title"] as? String,
+                        description: action.payload["description"] as? String,
+                        category: action.payload["category"] as? String,
+                        priority: action.payload["priority"] as? String,
+                        issue_type: (action.payload["issue_type"] as? String)
+                            ?? (action.payload["issueType"] as? String),
+                        clarifying_question: nil
+                    )
+                }
+            }
+        }
+
+        // 2) Sanitize premature "ticket opened" phrasing — the user hasn't
+        //    confirmed anything yet, so claims like "I have opened a ticket"
+        //    are misleading and contradict the Yes / Not now card.
+        if !msg.content.isEmpty {
+            msg.content = Self.sanitizePrematureClaims(msg.content)
+        }
+
+        // 3) Proposal-only / clarifying-question fallback text.
+        if msg.content.isEmpty, let proposal = msg.proposedTicket {
+            if let q = proposal.clarifying_question, !q.isEmpty {
+                msg.content = q
+            } else if proposal.hasDraftTicket {
+                msg.content = "I've drafted a ticket for you — confirm below to send it to the building team."
+            }
+        }
+
+        // 4) Cancelled mid-flight with no content collected.
+        if wasCancelled
+            && msg.content.isEmpty
+            && msg.proposedTicket == nil
+            && msg.errorText == nil {
+            msg.errorText = "Request was cancelled. Tap retry to try again."
+        }
+
+        // 5) Final empty-stream fallback (no text, no proposal, no error).
+        //    NEVER remove the bubble — silent drops used to leave the user
+        //    staring at "Monty is thinking\u2026" forever.
+        if msg.content.isEmpty
+            && msg.proposedTicket == nil
+            && msg.errorText == nil {
+            msg.content = "I didn't catch that — could you rephrase your question?"
+        }
+
+        messages[idx] = msg
+
+        #if DEBUG
+        if msg.content.isEmpty && msg.proposedTicket == nil && msg.errorText == nil {
+            print("[MontyChat] Empty assistant bubble survived finalization id=\(id)")
+        }
+        #endif
+    }
+
+    /// Strips claims that we've already opened a ticket. The proposal flow
+    /// requires explicit user confirmation, so streamed "I've opened a
+    /// ticket" / "our team will follow up" style copy is misleading.
+    private static func sanitizePrematureClaims(_ text: String) -> String {
+        let patterns: [String] = [
+            #"(?i)i(?:'|’)?ve\s+opened\s+a\s+ticket[^.!?\n]*[.!?]?"#,
+            #"(?i)i\s+have\s+opened\s+a\s+ticket[^.!?\n]*[.!?]?"#,
+            #"(?i)i(?:'|’)?ve\s+(?:created|submitted|filed|logged)\s+(?:a\s+)?(?:maintenance\s+)?(?:ticket|request)[^.!?\n]*[.!?]?"#,
+            #"(?i)i\s+(?:created|submitted|filed|logged)\s+(?:a\s+)?(?:maintenance\s+)?(?:ticket|request)[^.!?\n]*[.!?]?"#,
+            #"(?i)(?:our|the)\s+team\s+will\s+follow\s+up[^.!?\n]*[.!?]?"#,
+            #"(?i)the\s+building\s+team\s+will\s+follow\s+up[^.!?\n]*[.!?]?"#,
+        ]
+        var out = text
+        for p in patterns {
+            if let rx = try? NSRegularExpression(pattern: p) {
+                let ns = out as NSString
+                out = rx.stringByReplacingMatches(
+                    in: out,
+                    range: NSRange(location: 0, length: ns.length),
+                    withTemplate: ""
+                )
+            }
+        }
+        if let rx = try? NSRegularExpression(pattern: #"\n{3,}"#) {
+            let ns = out as NSString
+            out = rx.stringByReplacingMatches(
+                in: out,
+                range: NSRange(location: 0, length: ns.length),
+                withTemplate: "\n\n"
+            )
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Merges incremental proposal frames so a clarifying question that lands
+    /// before a draft (or vice-versa) doesn't overwrite earlier fields.
+    private func mergeProposal(_ incoming: ChatProposedTicket, into id: UUID) {
+        update(id) { msg in
+            if var existing = msg.proposedTicket {
+                if incoming.title?.isEmpty == false { existing.title = incoming.title }
+                if incoming.description?.isEmpty == false { existing.description = incoming.description }
+                if incoming.category?.isEmpty == false { existing.category = incoming.category }
+                if incoming.priority?.isEmpty == false { existing.priority = incoming.priority }
+                if incoming.issue_type?.isEmpty == false { existing.issue_type = incoming.issue_type }
+                if incoming.clarifying_question?.isEmpty == false {
+                    existing.clarifying_question = incoming.clarifying_question
+                }
+                msg.proposedTicket = existing
+            } else {
+                msg.proposedTicket = incoming
+            }
         }
     }
 
@@ -103,7 +271,10 @@ final class MontyChatViewModel {
             update(messageId) { $0.errorText = ChatFriendlyError.auth.residentMessage }
             return
         }
-        guard let proposal = messages.first(where: { $0.id == messageId })?.proposedTicket else { return }
+        guard let proposal = messages.first(where: { $0.id == messageId })?.proposedTicket,
+              proposal.hasDraftTicket,
+              let title = proposal.title, !title.isEmpty else { return }
+        let description = proposal.description ?? ""
         // Mark as in-flight (keeps the proposal card visible with a spinner).
         update(messageId) { $0.isCreatingTicket = true; $0.errorText = nil }
 
@@ -113,8 +284,8 @@ final class MontyChatViewModel {
             defer { self.ticketCreationTasks[messageId] = nil }
             do {
                 let result = try await MontyResidentAppService.createTicketFromChat(
-                    title: proposal.title,
-                    description: proposal.description,
+                    title: title,
+                    description: description,
                     category: proposal.category,
                     priority: proposal.priority,
                     issueType: proposal.issue_type,
@@ -126,7 +297,7 @@ final class MontyChatViewModel {
                     msg.proposedTicket = nil
                     msg.createdTicket = ChatTicket(
                         id: result.ticket.id,
-                        title: result.ticket.title ?? proposal.title,
+                        title: result.ticket.title ?? title,
                         status: result.ticket.status,
                         priority: result.ticket.priority
                     )
@@ -483,7 +654,9 @@ private struct MessageBubble: View {
                             }
                         }
 
-                        if let proposal = message.proposedTicket, !message.proposalDeclined {
+                        if let proposal = message.proposedTicket,
+                           !message.proposalDeclined,
+                           proposal.hasDraftTicket {
                             TicketProposalCard(
                                 proposal: proposal,
                                 isCreating: message.isCreatingTicket,
@@ -611,11 +784,11 @@ private struct TicketProposalCard: View {
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.textSecondary)
             }
-            Text(proposal.title)
+            Text(proposal.title ?? "Maintenance request")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-            if !proposal.description.isEmpty {
-                Text(proposal.description)
+            if let desc = proposal.description, !desc.isEmpty {
+                Text(desc)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)

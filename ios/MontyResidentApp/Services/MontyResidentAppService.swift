@@ -102,6 +102,62 @@ enum MontyResidentAppService {
             .execute(as: [UnitPerson].self)
     }
 
+    // MARK: - Chat sessions / messages
+
+    private nonisolated struct ChatSessionRow: Decodable, Sendable {
+        let id: String
+    }
+
+    /// Creates a row in `chat_sessions` for a fresh Ask Monty conversation.
+    /// Best-effort: returns nil if the table is absent or RLS rejects the insert
+    /// — the chat keeps working, it just won't be threaded server-side.
+    static func createChatSession(propertyId: String) async -> String? {
+        guard let uid = currentUserId() else { return nil }
+        struct Payload: Encodable {
+            let user_id: String
+            let property_id: String
+        }
+        let row: ChatSessionRow? = try? await api.insert(
+            into: "chat_sessions",
+            body: Payload(user_id: uid, property_id: propertyId),
+            returning: ChatSessionRow.self
+        )
+        return row?.id
+    }
+
+    /// Persists a single chat turn. Best-effort — silently no-ops if the table
+    /// or columns are missing on this install.
+    static func insertChatMessage(
+        sessionId: String,
+        role: String,
+        content: String,
+        auditId: String?,
+        proposedTicket: ChatProposedTicket?,
+        proposalStatus: String?
+    ) async {
+        struct Payload: Encodable {
+            let session_id: String
+            let role: String
+            let content: String
+            let ai_audit_id: String?
+            let proposed_ticket: ChatProposedTicket?
+            let proposal_status: String?
+        }
+        struct EmptyResp: Decodable {}
+        _ = try? await api.insert(
+            into: "chat_messages",
+            body: Payload(
+                session_id: sessionId,
+                role: role,
+                content: content,
+                ai_audit_id: auditId,
+                proposed_ticket: proposedTicket,
+                proposal_status: proposalStatus
+            ),
+            returning: EmptyResp.self
+        )
+    }
+
     // MARK: - Tickets
 
     /// Resident tickets:

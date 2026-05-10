@@ -766,13 +766,42 @@ private struct MessageBubble: View {
     }
 
     private var renderedText: AttributedString {
-        if let attr = try? AttributedString(
-            markdown: message.content,
-            options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            return attr
+        renderMarkdown(message.content)
+    }
+
+    private func renderMarkdown(_ source: String) -> AttributedString {
+        // Render line-by-line so block elements (lists, paragraph breaks) and
+        // inline emphasis (**bold**, *italic*, `code`, [links]) both render.
+        let lines = source.components(separatedBy: "\n")
+        var result = AttributedString("")
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+        for (index, rawLine) in lines.enumerated() {
+            var line = rawLine
+            var prefix = ""
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                prefix = "\u{2022}  "
+                if let range = line.range(of: trimmed.hasPrefix("- ") ? "- " : "* ") {
+                    line.removeSubrange(line.startIndex..<range.upperBound)
+                }
+            }
+            let rendered: AttributedString = {
+                if let attr = try? AttributedString(markdown: line, options: options) {
+                    return attr
+                }
+                return AttributedString(line)
+            }()
+            if !prefix.isEmpty {
+                result.append(AttributedString(prefix))
+            }
+            result.append(rendered)
+            if index < lines.count - 1 {
+                result.append(AttributedString("\n"))
+            }
         }
-        return AttributedString(message.content)
+        return result
     }
 }
 

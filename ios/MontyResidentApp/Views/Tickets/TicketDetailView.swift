@@ -424,11 +424,11 @@ struct TicketDetailView: View {
                 } else {
                     Text(m.displayBody)
                         .font(.system(size: 15))
-                        .foregroundStyle(isMine ? .white : Theme.textPrimary)
+                        .foregroundStyle(isMine ? ChatPalette.userText : Theme.textPrimary)
                         .padding(12)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(isMine ? Theme.accent : Theme.surface)
+                                .fill(isMine ? ChatPalette.userBubble : Theme.surface)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)

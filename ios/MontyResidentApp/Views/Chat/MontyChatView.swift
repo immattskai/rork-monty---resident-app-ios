@@ -178,30 +178,20 @@ final class MontyChatViewModel {
             }
         }
 
-        // 4) Cancelled mid-flight with no content collected.
-        if wasCancelled
-            && msg.content.isEmpty
-            && msg.proposedTicket == nil
-            && msg.errorText == nil {
-            msg.errorText = "Request was cancelled. Tap retry to try again."
-        }
-
-        // 5) Final empty-stream fallback (no text, no proposal, no error).
-        //    NEVER remove the bubble — silent drops used to leave the user
-        //    staring at "Monty is thinking\u2026" forever.
+        // 4) If we end up with no renderable content (no text, no proposal,
+        //    no server error), surface a real error state — NOT an invented
+        //    assistant turn. The client is not allowed to fabricate copy.
+        //    The bubble stays so the user has a Retry action.
         if msg.content.isEmpty
             && msg.proposedTicket == nil
             && msg.errorText == nil {
-            msg.content = "I didn't catch that — could you rephrase your question?"
+            #if DEBUG
+            print("[MontyChat] Empty assistant bubble id=\(id) cancelled=\(wasCancelled) — surfacing error state")
+            #endif
+            msg.errorText = "Couldn't reach Monty — tap to retry."
         }
 
         messages[idx] = msg
-
-        #if DEBUG
-        if msg.content.isEmpty && msg.proposedTicket == nil && msg.errorText == nil {
-            print("[MontyChat] Empty assistant bubble survived finalization id=\(id)")
-        }
-        #endif
     }
 
     /// Strips claims that we've already opened a ticket. The proposal flow

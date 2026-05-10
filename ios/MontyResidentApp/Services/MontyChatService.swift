@@ -153,6 +153,156 @@ nonisolated enum ChatFriendlyError: Error, Sendable {
     }
 }
 
+// MARK: - Buffered SSE parser
+//
+// The `chat-with-ai` edge function emits events separated by `\n\n` (or
+// `\r\n\r\n`). `URLSession.AsyncBytes.lines` splits on single `\n` and will
+// hand back partial `data:` lines mid-frame — those then fail JSON parsing
+// and get silently dropped, which is exactly the bug we hit. This parser
+// accumulates bytes until a full frame is in hand, then yields it.
+//
+// Pure / nonisolated so it's testable without spinning up the network.
+nonisolated struct SSEFrameBuffer {
+    private var buffer = Data()
+
+    /// Append a new chunk of bytes and return any complete frames now in the
+    /// buffer (each as a UTF-8 string, with the trailing separator stripped).
+    mutating func append(_ chunk: Data) -> [String] {
+        buffer.append(chunk)
+        return drain()
+    }
+
+    /// Returns any remaining buffered content as a single "frame" (used on
+    /// stream end so trailing data without a final `\n\n` isn't lost).
+    mutating func flush() -> String? {
+        guard !buffer.isEmpty else { return nil }
+        let s = String(data: buffer, encoding: .utf8)
+        buffer.removeAll(keepingCapacity: false)
+        guard let s, !s.isEmpty else { return nil }
+        return s
+    }
+
+    private mutating func drain() -> [String] {
+        var frames: [String] = []
+        // Search for \n\n or \r\n\r\n. We scan over Data for byte patterns.
+        while let range = nextSeparator(in: buffer) {
+            let frameData = buffer.subdata(in: 0..<range.lowerBound)
+            buffer.removeSubrange(0..<range.upperBound)
+            if let s = String(data: frameData, encoding: .utf8), !s.isEmpty {
+                frames.append(s)
+            }
+        }
+        return frames
+    }
+
+    private func nextSeparator(in data: Data) -> Range<Int>? {
+        let bytes = [UInt8](data)
+        var i = 0
+        while i < bytes.count {
+            // \n\n
+            if bytes[i] == 0x0A, i + 1 < bytes.count, bytes[i + 1] == 0x0A {
+                return i..<(i + 2)
+            }
+            // \r\n\r\n
+            if bytes[i] == 0x0D,
+               i + 3 < bytes.count,
+               bytes[i + 1] == 0x0A,
+               bytes[i + 2] == 0x0D,
+               bytes[i + 3] == 0x0A {
+                return i..<(i + 4)
+            }
+            i += 1
+        }
+        return nil
+    }
+}
+
+/// Parses a single fully-assembled SSE frame into zero or more stream events.
+/// Per the SSE spec, a frame may contain multiple `data:` lines whose values
+/// are joined with `\n`. Returns the resulting event list (or empty if the
+/// frame had no `data:` lines, e.g. a `: comment` keepalive).
+nonisolated func parseSSEFrame(_ frame: String) -> [ChatStreamEvent] {
+    var dataLines: [String] = []
+    for rawLine in frame.split(separator: "\n", omittingEmptySubsequences: false) {
+        let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : String(rawLine)
+        if line.hasPrefix("data:") {
+            let payload = String(line.dropFirst("data:".count))
+            // Per spec, strip a single leading space if present.
+            dataLines.append(payload.hasPrefix(" ") ? String(payload.dropFirst()) : payload)
+        }
+        // Ignore `event:`, `id:`, `retry:`, comments. Server doesn't use them.
+    }
+    guard !dataLines.isEmpty else { return [] }
+    let payload = dataLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    if payload.isEmpty { return [] }
+    if payload == "[DONE]" { return [.done] }
+
+    guard let bytes = payload.data(using: .utf8) else { return [] }
+    guard let json = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
+        #if DEBUG
+        let preview = String(payload.prefix(200))
+        print("[MontyChat][SSE] Unparseable fully-assembled frame: \(preview)")
+        #endif
+        return []
+    }
+
+    #if DEBUG
+    print("[MontyChat][SSE] frame keys=\(Array(json.keys))")
+    #endif
+
+    var events: [ChatStreamEvent] = []
+
+    if let auditId = json["auditId"] as? String, !auditId.isEmpty {
+        events.append(.auditId(auditId))
+    }
+    if let proposed = json["proposedTicket"] as? [String: Any] {
+        if let pt = decodeProposedTicket(proposed) {
+            events.append(.proposedTicket(pt))
+        }
+    }
+    if let type = json["type"] as? String, type == "meta" {
+        events.append(.meta(complexity: json["complexity"] as? String))
+    }
+    if let complexity = json["complexity"] as? String,
+       json["type"] == nil,
+       json["choices"] == nil {
+        // First frame from chat-with-ai: bare {"complexity":"simple"}.
+        events.append(.meta(complexity: complexity))
+    }
+    if let choices = json["choices"] as? [[String: Any]],
+       let delta = choices.first?["delta"] as? [String: Any],
+       let content = delta["content"] as? String,
+       !content.isEmpty {
+        events.append(.delta(content))
+    }
+    return events
+}
+
+/// Decodes a `proposedTicket` payload. Accepts the frame as long as ANY
+/// meaningful field is present — the backend may emit a clarifying-only
+/// proposal (no title yet) when it needs one more detail before drafting.
+nonisolated func decodeProposedTicket(_ dict: [String: Any]) -> ChatProposedTicket? {
+    let title = (dict["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    let description = (dict["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    let category = dict["category"] as? String
+    let priority = dict["priority"] as? String
+    let issueType = (dict["issue_type"] as? String) ?? (dict["issueType"] as? String)
+    let clarifying = (dict["clarifying_question"] as? String) ?? (dict["clarifyingQuestion"] as? String)
+
+    let hasAny = [title, description, category, priority, issueType, clarifying]
+        .contains { ($0?.isEmpty == false) }
+    guard hasAny else { return nil }
+
+    return ChatProposedTicket(
+        title: title,
+        description: description,
+        category: category,
+        priority: priority,
+        issue_type: issueType,
+        clarifying_question: clarifying
+    )
+}
+
 @MainActor
 enum MontyChatService {
     /// Streams Monty AI responses from the `chat-with-ai` Supabase edge function.
@@ -203,23 +353,75 @@ enum MontyChatService {
                         throw ChatFriendlyError.map(status: http.statusCode, raw: raw)
                     }
 
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-                        guard line.hasPrefix("data:") else { continue }
-                        let payload = line
-                            .dropFirst("data:".count)
-                            .trimmingCharacters(in: .whitespaces)
-                        if payload.isEmpty { continue }
-                        if payload == "[DONE]" {
-                            continuation.yield(.done)
-                            break
+                    // Diagnostics: track the full shape of what we received so
+                    // future silent drops are easy to spot in logs.
+                    var totalBytes = 0
+                    var frameCount = 0
+                    var deltaCount = 0
+                    var sawProposal = false
+                    var sawAudit = false
+                    var sawDone = false
+
+                    var buffer = SSEFrameBuffer()
+                    // We accumulate single bytes into small chunks before
+                    // feeding them to the buffer for efficiency.
+                    var pending = Data()
+                    pending.reserveCapacity(1024)
+
+                    func drainFrames(_ frames: [String]) throws {
+                        for frame in frames {
+                            frameCount += 1
+                            #if DEBUG
+                            let preview = String(frame.prefix(200))
+                            print("[MontyChat][SSE] raw frame (#\(frameCount)): \(preview)")
+                            #endif
+                            let events = parseSSEFrame(frame)
+                            for event in events {
+                                switch event {
+                                case .delta: deltaCount += 1
+                                case .proposedTicket: sawProposal = true
+                                case .auditId: sawAudit = true
+                                case .done: sawDone = true
+                                case .meta: break
+                                }
+                                continuation.yield(event)
+                                if case .done = event {
+                                    return
+                                }
+                            }
+                            try Task.checkCancellation()
                         }
-                        guard let data = payload.data(using: .utf8) else { continue }
-                        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                            continue
-                        }
-                        Self.dispatch(json: json, continuation: continuation)
                     }
+
+                    streamLoop: for try await byte in bytes {
+                        try Task.checkCancellation()
+                        totalBytes += 1
+                        pending.append(byte)
+                        // Flush in modest chunks. The cheap heuristic: flush on
+                        // every newline so frame boundaries land promptly.
+                        if byte == 0x0A || pending.count >= 1024 {
+                            let frames = buffer.append(pending)
+                            pending.removeAll(keepingCapacity: true)
+                            try drainFrames(frames)
+                            if sawDone { break streamLoop }
+                        }
+                    }
+                    // End-of-stream flush.
+                    if !pending.isEmpty {
+                        let frames = buffer.append(pending)
+                        try drainFrames(frames)
+                    }
+                    if let trailing = buffer.flush() {
+                        #if DEBUG
+                        print("[MontyChat][SSE] trailing un-terminated frame on stream end")
+                        #endif
+                        try drainFrames([trailing])
+                    }
+
+                    #if DEBUG
+                    print("[MontyChat][SSE] stream end: bytes=\(totalBytes) frames=\(frameCount) deltas=\(deltaCount) proposal=\(sawProposal) audit=\(sawAudit) done=\(sawDone)")
+                    #endif
+
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: ChatFriendlyError.map(error))
@@ -227,62 +429,5 @@ enum MontyChatService {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-    }
-
-    /// Routes a single SSE JSON frame to the correct event case. Critically,
-    /// any frame that ISN'T an OpenAI-style `choices` delta is treated as a
-    /// meta frame — never short-circuit out of the loop on unknown shapes,
-    /// otherwise tool-only replies (zero text + meta) silently disappear.
-    private static func dispatch(
-        json: [String: Any],
-        continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
-    ) {
-        // Standalone meta frames (no `choices` field).
-        if let auditId = json["auditId"] as? String, !auditId.isEmpty {
-            continuation.yield(.auditId(auditId))
-        }
-        if let proposed = json["proposedTicket"] as? [String: Any] {
-            if let pt = Self.decodeProposedTicket(proposed) {
-                continuation.yield(.proposedTicket(pt))
-            }
-        }
-        // Legacy `type: meta` frames carry `complexity` (and historically auditId).
-        if let type = json["type"] as? String, type == "meta" {
-            continuation.yield(.meta(complexity: json["complexity"] as? String))
-        }
-
-        // OpenAI-style delta — text content for the assistant bubble.
-        if let choices = json["choices"] as? [[String: Any]],
-           let delta = choices.first?["delta"] as? [String: Any],
-           let content = delta["content"] as? String,
-           !content.isEmpty {
-            continuation.yield(.delta(content))
-        }
-    }
-
-    private static func decodeProposedTicket(_ dict: [String: Any]) -> ChatProposedTicket? {
-        // Accept the frame as long as ANY meaningful field is present. The
-        // backend may emit a clarifying-only proposal (no title yet) when it
-        // needs one more detail before drafting a ticket — those used to be
-        // silently dropped.
-        let title = (dict["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        let description = (dict["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        let category = dict["category"] as? String
-        let priority = dict["priority"] as? String
-        let issueType = (dict["issue_type"] as? String) ?? (dict["issueType"] as? String)
-        let clarifying = (dict["clarifying_question"] as? String) ?? (dict["clarifyingQuestion"] as? String)
-
-        let hasAny = [title, description, category, priority, issueType, clarifying]
-            .contains { ($0?.isEmpty == false) }
-        guard hasAny else { return nil }
-
-        return ChatProposedTicket(
-            title: title,
-            description: description,
-            category: category,
-            priority: priority,
-            issue_type: issueType,
-            clarifying_question: clarifying
-        )
     }
 }

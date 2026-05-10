@@ -829,14 +829,6 @@ private struct TicketProposalCard: View {
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
-            HStack(spacing: 6) {
-                if let cat = proposal.category, !cat.isEmpty {
-                    badge(cat.replacingOccurrences(of: "_", with: " ").capitalized)
-                }
-                if let pri = proposal.priority, !pri.isEmpty {
-                    badge(pri.capitalized, tone: priorityTone(pri))
-                }
-            }
             HStack(spacing: 8) {
                 Button(action: onConfirm) {
                     HStack(spacing: 6) {
@@ -892,25 +884,6 @@ private struct TicketProposalCard: View {
         )
     }
 
-    private func badge(_ text: String, tone: Color = Theme.textSecondary) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(tone)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule().fill(tone.opacity(0.12))
-            )
-    }
-
-    private func priorityTone(_ priority: String) -> Color {
-        switch priority.lowercased() {
-        case "urgent": return Theme.danger
-        case "high": return Theme.warning
-        case "low": return Theme.textMuted
-        default: return Theme.info
-        }
-    }
 }
 
 // MARK: - "Ticket created" card

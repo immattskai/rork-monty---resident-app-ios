@@ -1,21 +1,19 @@
-# Safe performance pass — smoother scrolling and faster taps with no visual changes
+# Apply all 4 home performance wins
 
-Status: shipped the safe wins. Held off on the items flagged as having any visual risk per the "safe wins only" scope.
+All four optimizations to make Home feel smoother, with no visual changes.
 
-**Done**
+**What I'll do**
 
-- [x] **Cache photos in memory.** Bumped `URLCache.shared` to 64 MB RAM / 256 MB disk at app init so `AsyncImage` reuses hero, amenity, package, post, and avatar photos across screen visits.
-- [x] **Reuse formatters.** Added a cached currency `NumberFormatter` (keyed by code+digits) and a shared `yyyy-MM-dd` `DateFormatter` in `Fmt`. Home's two ad-hoc whole-dollar formatters now route through `Fmt.currencyWhole`.
-- [x] **Prepare haptics.** New `Haptics` helper with prepared light/medium/soft generators. Replaced every `UIImpactFeedbackGenerator(style: .light).impactOccurred()` site across Home, Tickets, Packages, Payments, Amenities, Community, Documents, Guests, Contacts, Chip, AddGuestSheet, plus the medium tap in `NotificationOnboardingView`.
-- [x] **Avoid redundant work on Home reload.** `HomeViewModel.load` now skips if the same unit was loaded within the last 30s. Pull-to-refresh forces a full refetch.
+- **Replace the scroll mask with a gradient overlay.** The current top-fade uses a full-screen mask, which forces an expensive offscreen render every frame while scrolling. I'll swap it for a lightweight gradient overlay that the GPU can draw on its fast path. You should feel noticeably smoother scrolling, especially on older devices.
 
-**Held (would risk visual change — say the word and I'll do them)**
+- **Stabilize index-keyed lists.** A few lists on Home key their items by position instead of identity. When data shifts or reloads, this causes images to re-fetch and animations to glitch. I'll switch them to stable IDs so rows stay put across refreshes.
 
-- [ ] Lighter Home compositing (swap `.mask` for overlay gradient).
-- [ ] Stabilize a couple of index-keyed `ForEach`s.
-- [ ] Cache expensive Home computed properties.
-- [ ] Trim redundant overlapping card shadows.
+- **Cache Home tile metrics.** Small win — pre-compute the tile heights and grid measurements once instead of re-deriving them as part of every layout pass.
 
-**Verified**
+- **Trim overlapping card shadows.** Several tiles stack their own drop shadow on top of the same card background. I'll consolidate to a single shadow per card so the GPU isn't drawing the same blur twice. Scrolling past dense rows of cards will feel lighter.
 
-- [x] iOS build passes.
+**What won't change**
+
+- No visual redesign — same layout, same colors, same card look.
+- Same Payments tall card, same 4-up bottom row, same announcements section.
+- Pull-to-refresh and realtime announcements keep working exactly as today.

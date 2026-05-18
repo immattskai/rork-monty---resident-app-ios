@@ -297,14 +297,66 @@ struct VendorsView: View {
             }
             .clipShape(.rect(cornerRadius: 16))
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader("RECOMMENDED FOR YOU", count: vm.recommendations.count)
-                VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                recommendationsHeader(count: vm.recommendations.count)
+                VStack(spacing: 12) {
                     ForEach(Array(vm.recommendations.enumerated()), id: \.element.vendor_id) { idx, rec in
                         RecommendationCard(rank: idx + 1, rec: rec)
                     }
                 }
+                .background(
+                    // Ambient glow behind the recommendations shelf
+                    ZStack {
+                        Circle()
+                            .fill(Color(hex: 0x8B5CF6).opacity(0.18))
+                            .frame(width: 320, height: 320)
+                            .blur(radius: 80)
+                            .offset(x: -80, y: -40)
+                        Circle()
+                            .fill(Color(hex: 0x5B8DEF).opacity(0.16))
+                            .frame(width: 280, height: 280)
+                            .blur(radius: 80)
+                            .offset(x: 100, y: 80)
+                    }
+                    .allowsHitTesting(false)
+                )
             }
+        }
+    }
+
+    private func recommendationsHeader(count: Int) -> some View {
+        HStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(hex: 0x8B5CF6), Color(hex: 0x5B8DEF)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 20, height: 20)
+
+            Text("RECOMMENDED FOR YOU")
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(1.4)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color(hex: 0x8B5CF6), Color(hex: 0x5B8DEF)],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                )
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color(hex: 0x8B5CF6).opacity(0.7))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Color(hex: 0x8B5CF6).opacity(0.12)))
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -471,74 +523,123 @@ private struct RecommendationCard: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Theme.premiumCard)
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            // Bold gradient background
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(hex: 0x6D28D9),
+                            Color(hex: 0x8B5CF6),
+                            Color(hex: 0x5B8DEF)
+                        ],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
+            // Soft inner highlight along the top edge
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color(hex: 0x8B5CF6).opacity(0.45), Color(hex: 0x5B8DEF).opacity(0.25)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
+                        colors: [Color.white.opacity(0.35), Color.white.opacity(0.05)],
+                        startPoint: .top, endPoint: .bottom
                     ),
                     lineWidth: 1
                 )
+            // Faint sparkle texture in the corner
+            Image(systemName: "sparkle")
+                .font(.system(size: 60, weight: .regular))
+                .foregroundStyle(Color.white.opacity(0.06))
+                .rotationEffect(.degrees(18))
+                .offset(x: 110, y: -50)
+                .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    // Rank medallion with glow
                     ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.18))
+                            .blur(radius: 8)
+                            .frame(width: 44, height: 44)
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color(hex: 0x8B5CF6), Color(hex: 0x5B8DEF)],
+                                    colors: [Color.white, Color.white.opacity(0.85)],
                                     startPoint: .topLeading, endPoint: .bottomTrailing
                                 )
                             )
+                            .frame(width: 34, height: 34)
                         Text("\(rank)")
-                            .font(.system(size: 13, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color(hex: 0x6D28D9))
                     }
-                    .frame(width: 26, height: 26)
+                    .frame(width: 44, height: 44)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(rec.name)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Theme.textPrimary)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(.white)
                             .lineLimit(2)
                         if let cat = rec.category?.trimmingCharacters(in: .whitespacesAndNewlines), !cat.isEmpty {
                             Text(cat.uppercased())
                                 .font(.system(size: 9.5, weight: .heavy))
                                 .tracking(0.9)
-                                .foregroundStyle(Color(hex: 0x8B5CF6))
+                                .foregroundStyle(.white)
                                 .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Capsule().fill(Color(hex: 0x8B5CF6).opacity(0.12)))
+                                .background(Capsule().fill(Color.white.opacity(0.18)))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.6))
                         }
                     }
                     Spacer(minLength: 0)
+
+                    // AI Pick badge
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("AI PICK")
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .tracking(0.8)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Capsule().fill(Color.white.opacity(0.22)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 0.6))
                 }
 
                 if !rec.reasoning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     HStack(alignment: .top, spacing: 8) {
-                        Rectangle()
-                            .fill(Color(hex: 0x8B5CF6).opacity(0.5))
-                            .frame(width: 2)
-                            .clipShape(.rect(cornerRadius: 1))
-                        Text("\u{201C}\(rec.reasoning)\u{201D}")
+                        Image(systemName: "quote.opening")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.white.opacity(0.6))
+                        Text(rec.reasoning)
                             .italic()
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.chrome(0.65))
+                            .font(.system(size: 13.5, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.95))
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.6)
+                    )
                 }
 
                 if let c = rec.primaryContact {
-                    VendorContactRow(contact: c)
+                    VendorContactRow(contact: c, onDark: true)
                 }
             }
-            .padding(14)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .clipShape(.rect(cornerRadius: 18))
-        .shadow(color: Theme.cardDropShadow, radius: 12, x: 0, y: 6)
+        .clipShape(.rect(cornerRadius: 22))
+        .shadow(color: Color(hex: 0x6D28D9).opacity(0.35), radius: 18, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.10), radius: 6, x: 0, y: 2)
     }
 }
 
@@ -546,22 +647,23 @@ private struct RecommendationCard: View {
 
 private struct VendorContactRow: View {
     let contact: ResidentVendorContact
+    var onDark: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let name = contact.contact_name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
                 Text(name)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
+                    .foregroundStyle(onDark ? Color.white.opacity(0.9) : Theme.textPrimary)
             }
             HStack(spacing: 8) {
                 if let phone = contact.phone?.trimmingCharacters(in: .whitespacesAndNewlines), !phone.isEmpty {
-                    ContactPill(icon: "phone.fill", label: phone) {
+                    ContactPill(icon: "phone.fill", label: phone, onDark: onDark) {
                         openURL("tel:\(phone.filter { $0.isNumber || $0 == "+" })")
                     }
                 }
                 if let email = contact.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
-                    ContactPill(icon: "envelope.fill", label: email) {
+                    ContactPill(icon: "envelope.fill", label: email, onDark: onDark) {
                         openURL("mailto:\(email)")
                     }
                 }
@@ -579,6 +681,7 @@ private struct VendorContactRow: View {
 private struct ContactPill: View {
     let icon: String
     let label: String
+    var onDark: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -591,11 +694,11 @@ private struct ContactPill: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .foregroundStyle(Theme.textPrimary)
+            .foregroundStyle(onDark ? Color.white : Theme.textPrimary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Capsule().fill(Color.chrome(0.06)))
-            .overlay(Capsule().stroke(Color.chrome(0.08), lineWidth: 0.6))
+            .background(Capsule().fill(onDark ? Color.white.opacity(0.18) : Color.chrome(0.06)))
+            .overlay(Capsule().stroke(onDark ? Color.white.opacity(0.30) : Color.chrome(0.08), lineWidth: 0.6))
         }
         .buttonStyle(.plain)
     }

@@ -1,13 +1,14 @@
-# Fix Home "No balance" tile to match real pending charges
+# Make recommended vendors visually stand out
 
-**The bug**
+**The problem**
+Right now the AI-recommended vendor cards use the same light card background as every other vendor in the directory, with only a faint purple border. They blend in.
 
-The Payments tile on the home screen reads from a cached balance table (and an older "outstanding balance" field). Your real $5.00 charge lives in the pending charges list — the same place the Payments screen reads from. So the home tile shows "No balance" while the Payments screen correctly shows $5.00.
+**What I'll change**
 
-**The fix**
-
-- Make the home Payments tile read the balance from the same source as the Payments screen: the sum of pending charges.
-- The cached balance becomes a fallback only — if there are no pending charges, then fall back to the cache (so other installs that rely on it keep working).
-- After this change, the tile will say **$5.00 · Current balance** for your account, and flip to **No balance · You're all caught up** only when there are genuinely no pending charges.
-
-No visual changes — same card, same colors, same layout. Just the number it displays.
+- [x] **Bold gradient background** on recommended cards — deep purple→blue gradient.
+- [x] **White text** on the gradient, with a frosted "AI Pick" badge in the top-right corner.
+- [x] **Larger rank medallion** with a soft glow halo.
+- [x] **Brighter quote treatment** — reasoning sits in a translucent white pill.
+- [x] **Frosted contact pills** — white-on-glass on the gradient card.
+- [x] **Subtle ambient glow** behind the section.
+- [x] **Stronger section header** — sparkle icon + gradient text for "RECOMMENDED FOR YOU".

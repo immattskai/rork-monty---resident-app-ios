@@ -222,7 +222,7 @@ struct HomeView: View {
             case .packages: PackagesListView()
             case .payments: PaymentsView()
             case .documents: DocumentsView()
-            case .vendors: ComingSoonView(title: "Vendors", icon: "hammer", blurb: "Trusted local vendors recommended by your building — coming soon.")
+            case .vendors: VendorsView()
             case .contacts: ContactsView()
             case .guests: GuestsView()
             case .community: CommunityCategoriesView()

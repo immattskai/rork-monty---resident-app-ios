@@ -666,6 +666,56 @@ enum MontyResidentAppService {
             .execute(as: [VendorDirectoryEntry].self)
     }
 
+    // MARK: - Resident Vendor Directory
+
+    private nonisolated struct PropertyVendorAssignmentRow: Decodable, Sendable {
+        let vendor_id: String
+    }
+
+    private nonisolated struct RecommendVendorsResponse: Decodable, Sendable {
+        let recommendations: [VendorRecommendation]
+    }
+
+    /// Preferred vendors for the resident's property, with embedded contacts.
+    /// Mirrors the web `usePropertyVendors` hook 1:1:
+    ///   1. read `property_vendor_assignments` (property_id, is_enabled=true)
+    ///   2. read `vendors` with embedded `vendor_contacts` for those ids
+    /// RLS scopes both reads — no extra filters needed.
+    static func fetchPropertyVendorsForResident(propertyId: String) async throws -> [ResidentVendor] {
+        let assignments = try await api.from("property_vendor_assignments")
+            .select("vendor_id")
+            .eq("property_id", propertyId)
+            .eq("is_enabled", "true")
+            .limit(500)
+            .execute(as: [PropertyVendorAssignmentRow].self)
+        let ids = Array(Set(assignments.map { $0.vendor_id })).filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return [] }
+        return try await api.from("vendors")
+            .select("id, name, category, description, vendor_contacts(contact_name, email, phone, is_primary)")
+            .in("id", ids)
+            .order("name", ascending: true)
+            .limit(500)
+            .execute(as: [ResidentVendor].self)
+    }
+
+    /// Calls the `recommend-vendors` edge function. Bearer token is attached
+    /// automatically by `performData` — without it the function returns 401.
+    static func recommendVendors(description: String, propertyId: String) async throws -> [VendorRecommendation] {
+        let data = try await invokeFunction(
+            name: "recommend-vendors",
+            body: [
+                "description": description,
+                "property_id": propertyId,
+            ],
+            timeout: 45
+        )
+        do {
+            return try JSONDecoder().decode(RecommendVendorsResponse.self, from: data).recommendations
+        } catch {
+            throw SupabaseError.decoding(String(describing: error))
+        }
+    }
+
     /// Fires the `ticket-vendor-outreach` edge function and writes a
     /// confirmation AI message into the thread.
     static func triggerVendorOutreach(

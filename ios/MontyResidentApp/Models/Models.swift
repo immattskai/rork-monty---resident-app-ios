@@ -316,6 +316,45 @@ nonisolated struct RecommendedVendor: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Resident-facing Vendor Directory
+
+nonisolated struct ResidentVendorContact: Codable, Hashable {
+    var contact_name: String?
+    var email: String?
+    var phone: String?
+    var is_primary: Bool?
+}
+
+nonisolated struct ResidentVendor: Codable, Identifiable, Hashable {
+    let id: String
+    var name: String?
+    var category: String?
+    var description: String?
+    var vendor_contacts: [ResidentVendorContact]?
+
+    /// Picks the contact flagged `is_primary`, else the first contact.
+    var primaryContact: ResidentVendorContact? {
+        guard let cs = vendor_contacts, !cs.isEmpty else { return nil }
+        return cs.first(where: { $0.is_primary == true }) ?? cs.first
+    }
+}
+
+nonisolated struct VendorRecommendation: Codable, Identifiable, Hashable {
+    let vendor_id: String
+    var name: String
+    var category: String?
+    var description: String?
+    var reasoning: String
+    var contacts: [ResidentVendorContact]?
+
+    var id: String { vendor_id }
+
+    var primaryContact: ResidentVendorContact? {
+        guard let cs = contacts, !cs.isEmpty else { return nil }
+        return cs.first(where: { $0.is_primary == true }) ?? cs.first
+    }
+}
+
 nonisolated struct VendorDirectoryEntry: Codable, Identifiable, Hashable {
     let id: String
     var name: String?

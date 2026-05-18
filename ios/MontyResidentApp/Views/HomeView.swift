@@ -147,8 +147,12 @@ struct HomeView: View {
                     // Spacer matching the sticky hero row so cards begin below it.
                     // Slight negative offset (-10) pulls content up a touch closer
                     // to the sticky building/unit/profile row.
+                    // Hero photo occupies 203pt visually (frame 203 with -28 bottom padding
+                    // collapses its layout to 175pt). The bottom gradient fades fully into
+                    // Theme.background by 203pt, so the first card needs to start at ~211pt
+                    // to clear the fade region cleanly.
                     Color.clear
-                        .frame(height: heroVisibleHeight + 8)
+                        .frame(height: 211)
                         .allowsHitTesting(false)
 
                     Group {

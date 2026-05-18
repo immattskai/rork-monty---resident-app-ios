@@ -841,6 +841,11 @@ struct HomeView: View {
                             .foregroundStyle(Color.chrome(1))
                             .lineLimit(1)
                             .minimumScaleFactor(0.5)
+                        if !paid {
+                            Text(captionText)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.chrome(0.55))
+                        }
                     }
                 }
                 .padding(.horizontal, 14)

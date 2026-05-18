@@ -205,7 +205,7 @@ struct AddGuestSheet: View {
     private func relationshipChip(_ tag: String) -> some View {
         let isSelected = input.relationship.caseInsensitiveCompare(tag) == .orderedSame
         return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             input.relationship = isSelected ? "" : tag
         } label: {
             Text(tag)
@@ -221,7 +221,7 @@ struct AddGuestSheet: View {
     private func dayChip(_ day: Int) -> some View {
         let isSelected = input.recurringDays.contains(day)
         return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                 if isSelected { input.recurringDays.remove(day) }
                 else { input.recurringDays.insert(day) }

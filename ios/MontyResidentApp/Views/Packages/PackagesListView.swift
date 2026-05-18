@@ -170,7 +170,7 @@ struct PackagesListView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -198,7 +198,7 @@ struct PackagesListView: View {
         let isActive = vm.filter == f
         let count = vm.count(for: f)
         return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 vm.filter = f
             }

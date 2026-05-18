@@ -139,7 +139,7 @@ struct NotificationOnboardingView: View {
     private func enable() async {
         loading = true
         defer { loading = false }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Haptics.mediumTap()
         _ = await NotificationsManager.shared.requestPermission()
         finish()
     }

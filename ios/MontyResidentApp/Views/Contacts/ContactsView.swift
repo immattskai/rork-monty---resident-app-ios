@@ -105,7 +105,7 @@ struct ContactsView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")

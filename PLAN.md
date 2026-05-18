@@ -1,25 +1,21 @@
-# Reshape home grid: tall Payments card with balance, 4-up bottom row
+# Safe performance pass — smoother scrolling and faster taps with no visual changes
 
-**New home layout**
+Status: shipped the safe wins. Held off on the items flagged as having any visual risk per the "safe wins only" scope.
 
-- Top-left column (stacked, each the same height as Tickets today):
-  1. Tickets
-  2. Packages
-- Top-right: a single **tall Payments card** that spans the same vertical space as the two left-column tiles. It shows the current rent balance prominently (e.g. "$1,850 due" or "Rent paid"), the due date if available, and a subtle status pill.
-- Below that: **Guests + Community** side-by-side as a standard-height tile row.
-- Bottom quick row becomes **4 buttons**: Documents · Vendors · Contacts · Amenities — same compact icon-on-top style as today, evenly spaced.
+**Done**
 
-**Heights**
+- [x] **Cache photos in memory.** Bumped `URLCache.shared` to 64 MB RAM / 256 MB disk at app init so `AsyncImage` reuses hero, amenity, package, post, and avatar photos across screen visits.
+- [x] **Reuse formatters.** Added a cached currency `NumberFormatter` (keyed by code+digits) and a shared `yyyy-MM-dd` `DateFormatter` in `Fmt`. Home's two ad-hoc whole-dollar formatters now route through `Fmt.currencyWhole`.
+- [x] **Prepare haptics.** New `Haptics` helper with prepared light/medium/soft generators. Replaced every `UIImpactFeedbackGenerator(style: .light).impactOccurred()` site across Home, Tickets, Packages, Payments, Amenities, Community, Documents, Guests, Contacts, Chip, AddGuestSheet, plus the medium tap in `NotificationOnboardingView`.
+- [x] **Avoid redundant work on Home reload.** `HomeViewModel.load` now skips if the same unit was loaded within the last 30s. Pull-to-refresh forces a full refetch.
 
-- Tickets, Packages, Guests, Community all share the exact same height as the current Tickets tile.
-- The tall Payments card height = 2× a normal tile + 1× the grid spacing, so its top and bottom align perfectly with the left column.
-- All four bottom buttons share one consistent height.
+**Held (would risk visual change — say the word and I'll do them)**
 
-**Payments card content**
+- [ ] Lighter Home compositing (swap `.mask` for overlay gradient).
+- [ ] Stabilize a couple of index-keyed `ForEach`s.
+- [ ] Cache expensive Home computed properties.
+- [ ] Trim redundant overlapping card shadows.
 
-- Large balance amount (or "Rent paid" with a check) as the focal element
-- Smaller label: "Current balance" / due date
-- Credit card icon, amber if due / blue if paid
-- Chevron to the Payments screen
+**Verified**
 
-No other behavior, routes, or copy changes.
+- [x] iOS build passes.

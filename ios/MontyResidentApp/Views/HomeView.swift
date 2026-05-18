@@ -17,6 +17,12 @@ final class HomeViewModel {
     var loading = true
     var error: String?
 
+    /// Timestamp of the last successful load. Used to skip redundant refetches
+    /// when the user bounces back to Home within a short freshness window.
+    private var lastLoadedAt: Date?
+    private var lastLoadedUnitId: String?
+    private let freshnessWindow: TimeInterval = 30
+
     /// Refetch only the announcements list. Used by the realtime subscription so a
     /// single insert/update doesn't trigger a full home reload.
     func refreshAnnouncements(propertyId: String) async {
@@ -25,7 +31,16 @@ final class HomeViewModel {
         }
     }
 
-    func load(unitId: String, propertyId: String, unitNumber: String?) async {
+    func load(unitId: String, propertyId: String, unitNumber: String?, force: Bool = false) async {
+        // Skip if we just loaded the same unit very recently. Pull-to-refresh
+        // passes force=true to bypass this.
+        if !force,
+           let last = lastLoadedAt,
+           lastLoadedUnitId == unitId,
+           Date().timeIntervalSince(last) < freshnessWindow {
+            loading = false
+            return
+        }
         loading = true
         error = nil
         async let balanceT: AccountBalance?? = try? MontyResidentAppService.fetchBalance(unitId: unitId)
@@ -71,6 +86,8 @@ final class HomeViewModel {
         }.count
         self.documentsCount = documents.count
         self.contactsCount = contacts.count
+        self.lastLoadedAt = Date()
+        self.lastLoadedUnitId = unitId
         loading = false
     }
 }
@@ -182,7 +199,7 @@ struct HomeView: View {
                 .padding(.bottom, 40)
             }
             .ignoresSafeArea(edges: .top)
-            .refreshable { await reload() }
+            .refreshable { await reload(force: true) }
             .mask(scrollFadeMask.ignoresSafeArea())
 
             // Sticky building name + unit + profile row sits ON TOP so it stays
@@ -251,12 +268,12 @@ struct HomeView: View {
         announcementsRealtime.start(propertyId: propertyId, accessToken: token)
     }
 
-    private func reload() async {
+    private func reload(force: Bool = false) async {
         guard let unit = app.activeUnit else {
             vm.loading = false
             return
         }
-        await vm.load(unitId: unit.id, propertyId: unit.property_id, unitNumber: unit.unit_number)
+        await vm.load(unitId: unit.id, propertyId: unit.property_id, unitNumber: unit.unit_number, force: force)
     }
 
     private var initials: String {
@@ -593,7 +610,7 @@ struct HomeView: View {
     }
 
     private func openMonty(with text: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Haptics.tap()
         montyInitialInput = text
         inlineMontyFocused = false
         // Clear the inline field so it's empty when the user returns.
@@ -766,11 +783,7 @@ struct HomeView: View {
     }
 
     private func paymentsDueText(cents: Int) -> String {
-        let dollars = Double(cents) / 100.0
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.maximumFractionDigits = 0
-        return (f.string(from: NSNumber(value: dollars)) ?? "—") + " due"
+        Fmt.currencyWhole(cents: cents) + " due"
     }
 
     private static let homeTileHeight: CGFloat = 68
@@ -851,7 +864,7 @@ struct HomeView: View {
         }
         .buttonStyle(PressableCardStyle())
         .simultaneousGesture(TapGesture().onEnded {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
         })
     }
 
@@ -931,16 +944,12 @@ struct HomeView: View {
         }
         .buttonStyle(PressableCardStyle())
         .simultaneousGesture(TapGesture().onEnded {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
         })
     }
 
     private static func currencyString(cents: Int) -> String {
-        let dollars = Double(cents) / 100.0
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: dollars)) ?? "—"
+        Fmt.currencyWhole(cents: cents)
     }
 
     // MARK: - Bottom quick row (Documents / Vendors / Contacts)
@@ -989,7 +998,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(PressableCardStyle())
                 .simultaneousGesture(TapGesture().onEnded {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                 })
             }
         }
@@ -1038,7 +1047,7 @@ struct HomeView: View {
                     )
                 }
                 .simultaneousGesture(TapGesture().onEnded {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                 })
                 Spacer()
             }

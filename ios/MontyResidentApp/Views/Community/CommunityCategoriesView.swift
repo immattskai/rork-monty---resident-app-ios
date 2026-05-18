@@ -132,7 +132,7 @@ struct CommunityCategoriesView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -158,7 +158,7 @@ struct CommunityCategoriesView: View {
     private var rulesCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.tap()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                     rulesExpanded.toggle()
                 }
@@ -226,7 +226,7 @@ struct CommunityCategoriesView: View {
                 }
                 .buttonStyle(PressableCardStyle())
                 .simultaneousGesture(TapGesture().onEnded {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                 })
             }
         }

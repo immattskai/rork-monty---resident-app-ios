@@ -121,7 +121,7 @@ struct AmenitiesView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -212,7 +212,7 @@ struct AmenitiesView: View {
                     bookingStatusBadge(b.status)
                     if canCancel {
                         Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Haptics.tap()
                             guard let pid = app.activePropertyId else { return }
                             Task { await vm.cancel(bookingId: b.id, propertyId: pid) }
                         } label: {
@@ -279,7 +279,7 @@ struct AmenitiesView: View {
                         }
                         .buttonStyle(PressableCardStyle())
                         .simultaneousGesture(TapGesture().onEnded {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Haptics.tap()
                         })
                     }
                 }

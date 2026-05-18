@@ -154,7 +154,7 @@ struct GuestsView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -169,7 +169,7 @@ struct GuestsView: View {
 
     private var addGuestButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             addPrefill = nil
             editTarget = nil
             showAdd = true
@@ -282,7 +282,7 @@ struct GuestsView: View {
                 }
 
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                     addPrefill = nil
                     showAdd = true
                 } label: {

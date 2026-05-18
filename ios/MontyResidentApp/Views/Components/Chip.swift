@@ -49,7 +49,7 @@ struct FilterChip: View {
 
     var body: some View {
         Button(action: {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             action()
         }) {
             HStack(spacing: 6) {

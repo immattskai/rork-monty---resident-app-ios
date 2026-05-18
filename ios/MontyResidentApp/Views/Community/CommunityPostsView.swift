@@ -145,7 +145,7 @@ struct CommunityPostsView: View {
                                     }
                                     .buttonStyle(PressableCardStyle())
                                     .simultaneousGesture(TapGesture().onEnded {
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        Haptics.tap()
                                     })
                                 }
                             }
@@ -192,7 +192,7 @@ struct CommunityPostsView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             HStack(spacing: 6) {
@@ -212,7 +212,7 @@ struct CommunityPostsView: View {
 
     private var newPostButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             showCreate = true
         } label: {
             HStack(spacing: 6) {
@@ -279,7 +279,7 @@ struct CommunityPostsView: View {
     private func filterPill(_ f: CommunityDateFilter) -> some View {
         let isActive = vm.dateFilter == f
         return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 vm.dateFilter = f
             }
@@ -344,7 +344,7 @@ struct CommunityPostsView: View {
                 }
 
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                     showCreate = true
                 } label: {
                     HStack(spacing: 6) {

@@ -10,6 +10,16 @@ struct MontyResidentAppApp: App {
     @UIApplicationDelegateAdaptor(MontyAppDelegate.self) private var appDelegate
 
     init() {
+        // Give URLCache.shared a generous in-memory budget so AsyncImage hits
+        // for hero photos, amenities, package photos, post images and avatars
+        // don't re-download on every screen visit. (Default in-memory cache is
+        // only 512KB which is far too small for image-heavy feeds.)
+        URLCache.shared = URLCache(
+            memoryCapacity: 64 * 1024 * 1024,       // 64 MB RAM
+            diskCapacity:   256 * 1024 * 1024,      // 256 MB disk
+            diskPath: "monty-url-cache"
+        )
+
         // Use dynamic UIColors so the chrome follows light/dark automatically.
         let bgDynamic = UIColor { trait in
             trait.userInterfaceStyle == .dark

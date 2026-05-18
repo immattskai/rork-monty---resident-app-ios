@@ -202,7 +202,7 @@ struct DocumentsView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -221,7 +221,7 @@ struct DocumentsView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 NeutralFilterChip(label: "All", count: vm.docs.count, isSelected: vm.selectedCategory == nil) {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Haptics.tap()
                     withAnimation(Theme.Motion.smooth) { vm.selectedCategory = nil }
                 }
                 ForEach(vm.availableCategories, id: \.self) { key in
@@ -231,7 +231,7 @@ struct DocumentsView: View {
                         count: count,
                         isSelected: vm.selectedCategory == key
                     ) {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        Haptics.tap()
                         withAnimation(Theme.Motion.smooth) {
                             vm.selectedCategory = (vm.selectedCategory == key) ? nil : key
                         }

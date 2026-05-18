@@ -223,7 +223,7 @@ struct AmenityDetailView: View {
     private var headerBar: some View {
         HStack(spacing: 10) {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                Haptics.tap()
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
@@ -386,7 +386,7 @@ struct AmenityDetailView: View {
         let selected = vm.selectedSlot == slot
         return Button {
             guard !booked else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             vm.selectedSlot = selected ? nil : slot
         } label: {
             Text(slot.displayLabel)

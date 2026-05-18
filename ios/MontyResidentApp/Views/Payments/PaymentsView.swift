@@ -148,7 +148,7 @@ struct PaymentsView: View {
 
     private var backButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
             dismiss()
         } label: {
             Image(systemName: "chevron.left")
@@ -251,7 +251,7 @@ struct PaymentsView: View {
     private var payOnWebButton: some View {
         Button {
             openURL(Self.webPaymentsURL)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptics.tap()
         } label: {
             HStack(spacing: 8) {
                 Text("Pay on the Web")

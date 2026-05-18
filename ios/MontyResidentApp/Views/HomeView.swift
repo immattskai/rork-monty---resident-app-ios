@@ -830,39 +830,17 @@ struct HomeView: View {
 
                     Spacer(minLength: 0)
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Payments")
                             .font(.system(size: 13, weight: .semibold))
                             .tracking(-0.1)
                             .foregroundStyle(Color.chrome(0.62))
                         Text(amountText)
-                            .font(.system(size: paid ? 24 : 28, weight: .bold))
-                            .tracking(-0.6)
+                            .font(.system(size: paid ? 30 : 40, weight: .bold))
+                            .tracking(-0.8)
                             .foregroundStyle(Color.chrome(1))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        Text(captionText)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(paid ? accent : Color.chrome(0.55))
-                            .lineLimit(1)
-                    }
-
-                    if !paid {
-                        Spacer(minLength: 6)
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Balance due")
-                                .font(.system(size: 11.5, weight: .semibold))
-                                .tracking(0.1)
-                        }
-                        .foregroundStyle(accent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(accent.opacity(0.12))
-                        )
+                            .minimumScaleFactor(0.5)
                     }
                 }
                 .padding(.horizontal, 14)

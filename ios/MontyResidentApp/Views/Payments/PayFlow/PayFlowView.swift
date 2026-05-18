@@ -47,8 +47,9 @@ final class PayFlowViewModel {
     init(charges: [CommonCharge], propertyId: String?) {
         self.charges = charges
         self.propertyId = propertyId
+        // `amount` is already integer cents on the server (e.g. 500 = $5.00).
         let total = charges.reduce(0) { acc, c in
-            acc + Int(((c.amount ?? 0) * 100).rounded())
+            acc + Int((c.amount ?? 0).rounded())
         }
         self.amountCents = total
         // Default to first charge so server can attribute the payment.
@@ -57,7 +58,7 @@ final class PayFlowViewModel {
 
     var totalBalanceCents: Int {
         charges.reduce(0) { acc, c in
-            acc + Int(((c.amount ?? 0) * 100).rounded())
+            acc + Int((c.amount ?? 0).rounded())
         }
     }
 
@@ -348,7 +349,7 @@ private struct PayAmountStep: View {
     }
 
     private func chargeRow(_ c: CommonCharge) -> some View {
-        let cents = Int(((c.amount ?? 0) * 100).rounded())
+        let cents = Int((c.amount ?? 0).rounded())
         let selected = (vm.selectedChargeId == c.id)
         return Button {
             Haptics.tap()

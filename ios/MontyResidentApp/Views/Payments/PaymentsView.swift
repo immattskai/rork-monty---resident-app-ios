@@ -11,8 +11,8 @@ final class PaymentsViewModel {
     var error: String?
 
     var totalBalanceCents: Int {
-        let dollars = pendingCharges.reduce(0.0) { $0 + ($1.amount ?? 0) }
-        return Int((dollars * 100).rounded())
+        // `amount` is already integer cents on the server (e.g. 500 = $5.00).
+        pendingCharges.reduce(0) { $0 + Int(($1.amount ?? 0).rounded()) }
     }
 
     var nextDueDate: Date? {
@@ -338,7 +338,7 @@ struct PaymentsView: View {
     }
 
     private func chargeRow(_ c: CommonCharge) -> some View {
-        let cents = Int(((c.amount ?? 0) * 100).rounded())
+        let cents = Int((c.amount ?? 0).rounded())
         let due = Fmt.parseDay(c.due_date) ?? Fmt.parseDate(c.due_date)
         let needsAttention = (c.validation_status?.lowercased() == "invalid")
         let tint = needsAttention ? Color(hex: 0xE8B454) : Color(hex: 0xFF9A2F)

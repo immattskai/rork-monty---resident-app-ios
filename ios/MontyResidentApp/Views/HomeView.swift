@@ -874,7 +874,7 @@ struct HomeView: View {
         let balanceCents = vm.balance?.balance_cents ?? 0
         let paid = balanceCents <= 0
         let accent: Color = paid ? Theme.accentBlue : Theme.accentAmber
-        let amountText: String = paid ? "Rent paid" : Self.currencyString(cents: balanceCents)
+        let amountText: String = paid ? "No balance" : Self.currencyString(cents: balanceCents)
         let captionText: String = paid ? "You're all caught up" : "Current balance"
 
         return NavigationLink(value: HomeRoute.payments) {

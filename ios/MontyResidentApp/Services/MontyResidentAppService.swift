@@ -1101,28 +1101,37 @@ enum MontyResidentAppService {
             .select("id")
             .eq("profile_id", uid)
             .eq("property_id", propertyId)
-            .eq("is_active", "true")
             .limit(1)
             .execute(as: [BoardMemberRow].self)) ?? []
-        if !direct.isEmpty { return true }
+        if !direct.isEmpty {
+            print("[board-check] unitId=\(unitId ?? "nil") propertyId=\(propertyId) directMatch=true isBoardMember=true")
+            return true
+        }
 
         // B. Unit-based check — is any resident on the active unit a board member?
-        guard let unitId, !unitId.isEmpty else { return false }
+        guard let unitId, !unitId.isEmpty else {
+            print("[board-check] unitId=nil propertyId=\(propertyId) directMatch=false isBoardMember=false")
+            return false
+        }
         let people = (try? await api.from("unit_people")
             .select("profile_id")
             .eq("unit_id", unitId)
             .limit(50)
             .execute(as: [UnitPersonProfileRow].self)) ?? []
         let ids = Array(Set(people.compactMap { $0.profile_id })).filter { !$0.isEmpty }
-        guard !ids.isEmpty else { return false }
+        guard !ids.isEmpty else {
+            print("[board-check] unitId=\(unitId) propertyId=\(propertyId) coResidentProfileIds=[] isBoardMember=false")
+            return false
+        }
         let shared = (try? await api.from("board_members")
             .select("id")
             .eq("property_id", propertyId)
-            .eq("is_active", "true")
             .in("profile_id", ids)
             .limit(1)
             .execute(as: [BoardMemberRow].self)) ?? []
-        return !shared.isEmpty
+        let isMember = !shared.isEmpty
+        print("[board-check] unitId=\(unitId) propertyId=\(propertyId) coResidentProfileIds=\(ids) boardMatchCount=\(shared.count) isBoardMember=\(isMember)")
+        return isMember
     }
 
     /// Upcoming + recent board meetings for the resident's property. RLS scopes

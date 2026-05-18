@@ -120,7 +120,8 @@ final class AppState {
             isBoardMember = false
             return
         }
-        let result = (try? await MontyResidentAppService.fetchIsBoardMember(propertyId: pid)) ?? false
+        let uid = activeUnitId ?? activeUnit?.id
+        let result = (try? await MontyResidentAppService.fetchIsBoardMember(propertyId: pid, unitId: uid)) ?? false
         isBoardMember = result
     }
 

@@ -1,14 +1,13 @@
-# Make recommended vendors visually stand out
+# Recommended vendors — quieter, on-brand styling
 
 **The problem**
-Right now the AI-recommended vendor cards use the same light card background as every other vendor in the directory, with only a faint purple border. They blend in.
+The bold purple→blue gradient cards felt out of place against the rest of the app's grey/white palette.
 
-**What I'll change**
+**What I changed**
 
-- [x] **Bold gradient background** on recommended cards — deep purple→blue gradient.
-- [x] **White text** on the gradient, with a frosted "AI Pick" badge in the top-right corner.
-- [x] **Larger rank medallion** with a soft glow halo.
-- [x] **Brighter quote treatment** — reasoning sits in a translucent white pill.
-- [x] **Frosted contact pills** — white-on-glass on the gradient card.
-- [x] **Subtle ambient glow** behind the section.
-- [x] **Stronger section header** — sparkle icon + gradient text for "RECOMMENDED FOR YOU".
+- [x] Reverted recommended card to standard grey/white premium card.
+- [x] Added a thick `Theme.accentAmber` (orange) border (2.5pt) to make it stand out.
+- [x] Rank medallion + AI Pick badge use orange accents instead of purple gradient.
+- [x] Removed ambient purple/blue glow behind the section.
+- [x] Section header uses a simple orange sparkle + label.
+- [x] Disabled scrolling on HomeView so it stays fixed in place (pull-to-refresh still works).

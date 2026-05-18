@@ -194,6 +194,7 @@ struct HomeView: View {
             }
             .ignoresSafeArea(edges: .top)
             .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(true)
             .refreshable { await reload(force: true) }
             .mask(scrollFadeMask.ignoresSafeArea())
 

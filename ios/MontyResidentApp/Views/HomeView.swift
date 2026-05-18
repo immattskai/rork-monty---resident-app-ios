@@ -132,27 +132,43 @@ struct HomeView: View {
     // Visible hero height after the negative bottom padding (203 - 28).
     private let heroVisibleHeight: CGFloat = 175
 
+    // Mask that keeps the top portion of the ScrollView (which sits behind the
+    // sticky row) hidden, then fades content in just below the row.
+    private var scrollFadeMask: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: heroVisibleHeight - 24)
+            LinearGradient(
+                colors: [Color.black.opacity(0), Color.black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 32)
+            Color.black
+            // (Mask uses alpha only; color values here don't affect rendering.)
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             AtmosphericBackground()
 
-            // ScrollView sits at the back. The sticky hero photo (with its
-            // gradient fading to Theme.background at the bottom) is drawn on
-            // top with hit-testing disabled, so cards naturally dissolve into
-            // the page background as they scroll up under the sticky row.
-            // This replaces the previous full-screen `.mask`, which forced an
-            // offscreen render every frame during scroll.
+            // Sticky hero photo + gradient sits BEHIND the scrolling content
+            // so cards scroll over it and cleanly cover it.
+            heroHeader
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+
+            // ScrollView sits BEHIND the sticky row. A mask softly fades the
+            // top of the scrolling content so cards appear to magically dissolve
+            // just below the building/unit/profile row instead of clipping.
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Spacer matching the sticky hero row so cards begin below it.
                     // Slight negative offset (-10) pulls content up a touch closer
                     // to the sticky building/unit/profile row.
-                    // Hero photo occupies 203pt visually (frame 203 with -28 bottom padding
-                    // collapses its layout to 175pt). The bottom gradient fades fully into
-                    // Theme.background by 203pt, so the first card needs to start at ~211pt
-                    // to clear the fade region cleanly.
                     Color.clear
-                        .frame(height: 211)
+                        .frame(height: heroVisibleHeight - 10)
                         .allowsHitTesting(false)
 
                     Group {
@@ -162,6 +178,7 @@ struct HomeView: View {
                         }
 
                         askMontyCard
+                            .padding(.top, -6)
                             .padding(.bottom, 12)
 
                         if app.isBoardMember {
@@ -183,14 +200,7 @@ struct HomeView: View {
             }
             .ignoresSafeArea(edges: .top)
             .refreshable { await reload(force: true) }
-
-            // Sticky hero photo + gradient sits ABOVE the scrolling content.
-            // The gradient fade to Theme.background at the bottom of the hero
-            // hides cards as they scroll up into the hero region — same
-            // visual as the old mask, drawn on the GPU's fast path.
-            heroHeader
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
+            .mask(scrollFadeMask.ignoresSafeArea())
 
             // Sticky building name + unit + profile row sits ON TOP so it stays
             // crisp and fully tappable while cards fade away beneath it.
@@ -778,18 +788,13 @@ struct HomeView: View {
 
     private static let homeTileHeight: CGFloat = 68
     private static let homeTileSpacing: CGFloat = 10
-    /// Pre-computed Payments card height (matches the two stacked left tiles)
-    /// so the layout engine doesn't recompute the expression every pass.
-    private static let paymentsCardHeight: CGFloat = homeTileHeight * 2 + homeTileSpacing
 
     private var tileGrid: some View {
         VStack(spacing: Self.homeTileSpacing) {
             HStack(alignment: .top, spacing: Self.homeTileSpacing) {
-                // Left column — Tickets + Packages stacked.
-                // Keyed by route (stable) instead of index so AsyncImages and
-                // press animations don't reset when counts change.
+                // Left column — Tickets + Packages stacked
                 VStack(spacing: Self.homeTileSpacing) {
-                    ForEach(leftColumnTiles, id: \.route) { tile in
+                    ForEach(Array(leftColumnTiles.enumerated()), id: \.offset) { _, tile in
                         tileLink(for: tile)
                     }
                 }
@@ -798,7 +803,7 @@ struct HomeView: View {
                 // Right — tall Payments card matching height of the two left tiles
                 paymentsTallCard
                     .frame(maxWidth: .infinity)
-                    .frame(height: Self.paymentsCardHeight)
+                    .frame(height: Self.homeTileHeight * 2 + Self.homeTileSpacing)
             }
 
             // Bottom row of the grid: Guests + Community side-by-side
@@ -855,10 +860,7 @@ struct HomeView: View {
             }
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .frame(height: Self.homeTileHeight)
-            // Lighter shadow (was r:14 y:6) — the GPU re-rasterizes shadows
-            // every scroll frame; tightening saves real work without changing
-            // the visual weight of the card.
-            .shadow(color: Theme.cardDropShadow, radius: 10, x: 0, y: 4)
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
         }
         .buttonStyle(PressableCardStyle())
         .simultaneousGesture(TapGesture().onEnded {
@@ -938,7 +940,7 @@ struct HomeView: View {
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .shadow(color: Theme.cardDropShadow, radius: 10, x: 0, y: 4)
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
         }
         .buttonStyle(PressableCardStyle())
         .simultaneousGesture(TapGesture().onEnded {
@@ -992,10 +994,7 @@ struct HomeView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 92)
-                    // Bottom quick tiles are small and tightly packed — a
-                    // softer shadow keeps depth without paying the full blur
-                    // cost across 4 cards every scroll frame.
-                    .shadow(color: Theme.cardDropShadow, radius: 8, x: 0, y: 3)
+                    .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
                 }
                 .buttonStyle(PressableCardStyle())
                 .simultaneousGesture(TapGesture().onEnded {
@@ -1126,7 +1125,7 @@ struct HomeView: View {
             .overlay(alignment: .topTrailing) {
                 if ann.isPinned { pinnedBadge.padding(10) }
             }
-            .shadow(color: Theme.cardDropShadow, radius: 10, x: 0, y: 4)
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 5)
         }
         .buttonStyle(PressableCardStyle())
     }
@@ -1181,7 +1180,7 @@ struct HomeView: View {
             .overlay(alignment: .topTrailing) {
                 if ann.isPinned { pinnedBadge.padding(10) }
             }
-            .shadow(color: Theme.cardDropShadow, radius: 10, x: 0, y: 4)
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 5)
         }
         .buttonStyle(PressableCardStyle())
     }

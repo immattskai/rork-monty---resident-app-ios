@@ -966,16 +966,24 @@ enum MontyResidentAppService {
 
     // MARK: - Payments
 
-    /// Reads `balance_cache` first, then falls back to `unit_people.outstanding_balance`
-    /// (web fallback). Returns nil only if neither source has data.
+    /// Primary source: sum of pending `common_charges` for the logged-in resident
+    /// (matches the Payments screen hero). Falls back to `balance_cache`, then to
+    /// `unit_people.outstanding_balance` if neither is available.
     static func fetchBalance(unitId: String) async throws -> AccountBalance? {
+        // 1. Pending common_charges sum — authoritative, same as Payments screen.
+        if let charges = try? await fetchPendingCharges(), !charges.isEmpty {
+            // `common_charges.amount` is already integer cents stored as numeric.
+            let total = charges.reduce(0) { $0 + Int(($1.amount ?? 0).rounded()) }
+            return AccountBalance(unit_id: unitId, balance_cents: total, past_due_cents: 0, fetched_at: nil, expires_at: nil)
+        }
+        // 2. balance_cache fallback.
         let cached: AccountBalance?? = try? await api.from("balance_cache")
             .select("unit_id, balance_cents, past_due_cents, fetched_at, expires_at")
             .eq("unit_id", unitId)
             .limit(1)
             .single()
             .executeOptional(as: AccountBalance.self)
-        if let value = cached.flatMap({ $0 }) { return value }
+        if let value = cached.flatMap({ $0 }), value.balance_cents > 0 { return value }
         // Fallback: unit_people.outstanding_balance / past_due_balance (decimal dollars).
         // Wrapped in try? so a missing column on this install doesn't break Home.
         guard let uid = currentUserId() else { return nil }

@@ -1,18 +1,13 @@
-# Fix Payments balance showing $500 instead of $5
+# Fix Home "No balance" tile to match real pending charges
 
 **The bug**
 
-The charge amount coming back from the server is already in cents (500 = $5.00), but the iOS code is treating it as decimal dollars and multiplying by 100 again — turning $5.00 into $500.00.
+The Payments tile on the home screen reads from a cached balance table (and an older "outstanding balance" field). Your real $5.00 charge lives in the pending charges list — the same place the Payments screen reads from. So the home tile shows "No balance" while the Payments screen correctly shows $5.00.
 
 **The fix**
 
-Stop multiplying the charge amount by 100 in the four places it happens:
+- Make the home Payments tile read the balance from the same source as the Payments screen: the sum of pending charges.
+- The cached balance becomes a fallback only — if there are no pending charges, then fall back to the cache (so other installs that rely on it keep working).
+- After this change, the tile will say **$5.00 · Current balance** for your account, and flip to **No balance · You're all caught up** only when there are genuinely no pending charges.
 
-- Payments hero balance
-- Pay flow's "full balance" default
-- Pay flow's per-charge amount when building the preview/process request
-- Per-charge row display in the charge selector
-
-After this, the hero will read $5.00, the preview call will send 500 cents (not 50000), and the receipt totals will be correct.
-
-No design changes, no new screens — just correcting the unit conversion.
+No visual changes — same card, same colors, same layout. Just the number it displays.

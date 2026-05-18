@@ -148,7 +148,7 @@ struct HomeView: View {
                     // Slight negative offset (-10) pulls content up a touch closer
                     // to the sticky building/unit/profile row.
                     Color.clear
-                        .frame(height: heroVisibleHeight - 10)
+                        .frame(height: heroVisibleHeight + 8)
                         .allowsHitTesting(false)
 
                     Group {
@@ -158,7 +158,6 @@ struct HomeView: View {
                         }
 
                         askMontyCard
-                            .padding(.top, -6)
                             .padding(.bottom, 12)
 
                         if app.isBoardMember {

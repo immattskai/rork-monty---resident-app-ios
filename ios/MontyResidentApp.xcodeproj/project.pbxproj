@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		XX4E69AE58C5D6F2180747XX /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX852F6713E8848C0191CEXX /* LinkKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,29 +33,12 @@
 		105FC5932E9EAD3200EA8BCF /* MontyResidentAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MontyResidentAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		105FC57C2E9EAD3100EA8BCF /* MontyResidentApp */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MontyResidentApp;
-			sourceTree = "<group>";
-		};
-		105FC58C2E9EAD3200EA8BCF /* MontyResidentAppTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MontyResidentAppTests;
-			sourceTree = "<group>";
-		};
-		105FC5962E9EAD3200EA8BCF /* MontyResidentAppUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MontyResidentAppUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
 		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				XX4E69AE58C5D6F2180747XX /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,6 +57,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		105FC57C2E9EAD3100EA8BCF /* MontyResidentApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MontyResidentApp;
+			sourceTree = "<group>";
+		};
+		105FC58C2E9EAD3200EA8BCF /* MontyResidentAppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MontyResidentAppTests;
+			sourceTree = "<group>";
+		};
+		105FC5962E9EAD3200EA8BCF /* MontyResidentAppUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MontyResidentAppUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXGroup section */
 		105FC5712E9EAD3100EA8BCF = {
@@ -112,6 +117,7 @@
 			);
 			name = MontyResidentApp;
 			packageProductDependencies = (
+				XX852F6713E8848C0191CEXX /* LinkKit */,
 			);
 			productName = MontyResidentApp;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* MontyResidentApp.app */;
@@ -204,6 +210,9 @@
 				105FC5792E9EAD3100EA8BCF /* MontyResidentApp */,
 				105FC5882E9EAD3200EA8BCF /* MontyResidentAppTests */,
 				105FC5922E9EAD3200EA8BCF /* MontyResidentAppUITests */,
+			);
+			packageReferences = (
+				XXD301E05609142EFEFF2EXX /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */,
 			);
 		};
 /* End PBXProject section */
@@ -585,6 +594,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		XXD301E05609142EFEFF2EXX /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		XX852F6713E8848C0191CEXX /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XXD301E05609142EFEFF2EXX /* XCRemoteSwiftPackageReference "plaid-link-ios-spm" */;
+			productName = LinkKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 105FC5722E9EAD3100EA8BCF /* Project object */;
 }

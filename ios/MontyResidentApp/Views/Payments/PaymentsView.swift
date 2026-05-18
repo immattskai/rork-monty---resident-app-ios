@@ -53,9 +53,9 @@ struct PaymentsView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @State private var vm = PaymentsViewModel()
+    @State private var presentingPayFlow = false
 
     private let horizontalPadding: CGFloat = 16
-    private static let webPaymentsURL = URL(string: "https://montyliving.com/payments")!
 
     var body: some View {
         ZStack {
@@ -65,6 +65,16 @@ struct PaymentsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: app.activeUnitId) { await reload() }
+        .sheet(isPresented: $presentingPayFlow) {
+            PayFlowView(
+                vm: PayFlowViewModel(
+                    charges: vm.pendingCharges,
+                    propertyId: app.activePropertyId
+                ),
+                onCompleted: { Task { await reload() } }
+            )
+            .environment(app)
+        }
     }
 
     @ViewBuilder
@@ -232,11 +242,11 @@ struct PaymentsView: View {
                 }
 
                 if !isClear {
-                    payOnWebButton
+                    payNowButton
                         .padding(.top, 4)
                 }
 
-                Text("In-app payments are coming soon — for now, pay your balance securely on montyliving.com.")
+                Text("Payments are processed securely by Moov. Card and bank details never touch our servers.")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(Color.chrome(0.4))
                     .fixedSize(horizontal: false, vertical: true)
@@ -248,19 +258,19 @@ struct PaymentsView: View {
         .shadow(color: Theme.cardDropShadow, radius: 18, x: 0, y: 8)
     }
 
-    private var payOnWebButton: some View {
+    private var payNowButton: some View {
         Button {
-            openURL(Self.webPaymentsURL)
             Haptics.tap()
+            presentingPayFlow = true
         } label: {
             HStack(spacing: 8) {
-                Text("Pay on the Web")
+                Text("Pay now")
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Image(systemName: "arrow.up.right")
+                Image(systemName: "arrow.right")
                     .font(.system(size: 13, weight: .bold))
             }
-            .foregroundStyle(Theme.textPrimary)
+            .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 13)
             .background(

@@ -429,7 +429,7 @@ struct HomeView: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .shadow(color: Color.chromeInverse(0.6), radius: 14, y: 2)
+                    .shadow(color: Color.chromeInverse(0.6), radius: 6, y: 1)
 
                 HStack(spacing: 5) {
                     Text(displayName)
@@ -447,7 +447,7 @@ struct HomeView: View {
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Theme.textMuted)
                 }
-                .shadow(color: Color.chromeInverse(0.5), radius: 8, y: 1)
+                .shadow(color: Color.chromeInverse(0.5), radius: 4, y: 1)
             }
             .padding(.leading, 4)
 
@@ -462,7 +462,7 @@ struct HomeView: View {
                         .foregroundStyle(Theme.textPrimary)
                 }
                 .frame(width: 32, height: 32)
-                .shadow(color: Color.chromeInverse(0.5), radius: 10, y: 2)
+                .shadow(color: Color.chromeInverse(0.5), radius: 5, y: 1)
             }
             .buttonStyle(.plain)
         }

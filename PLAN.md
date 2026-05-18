@@ -5,15 +5,14 @@
 - Top-left column (stacked, each the same height as Tickets today):
   1. Tickets
   2. Packages
-  3. Guests
-- Top-right: a single **tall Payments card** that spans the same vertical space as all three left-column tiles. It shows the current rent balance prominently (e.g. "$1,850 due" or "Rent paid"), the due date if available, and a subtle status pill.
-- Below that grid: **Community** sits on its own as a full-width row (shifted down one from where it used to be), matching the other tile height.
+- Top-right: a single **tall Payments card** that spans the same vertical space as the two left-column tiles. It shows the current rent balance prominently (e.g. "$1,850 due" or "Rent paid"), the due date if available, and a subtle status pill.
+- Below that: **Guests + Community** side-by-side as a standard-height tile row.
 - Bottom quick row becomes **4 buttons**: Documents · Vendors · Contacts · Amenities — same compact icon-on-top style as today, evenly spaced.
 
 **Heights**
 
 - Tickets, Packages, Guests, Community all share the exact same height as the current Tickets tile.
-- The tall Payments card height = 3× a normal tile + 2× the grid spacing, so its top and bottom align perfectly with the left column.
+- The tall Payments card height = 2× a normal tile + 1× the grid spacing, so its top and bottom align perfectly with the left column.
 - All four bottom buttons share one consistent height.
 
 **Payments card content**

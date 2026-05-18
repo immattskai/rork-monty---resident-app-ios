@@ -718,7 +718,7 @@ struct HomeView: View {
         }
     }
 
-    /// Three left-column tiles (each the same height as Tickets).
+    /// Two left-column tiles paired with the tall Payments card (same height each).
     private var leftColumnTiles: [Tile] {
         let openTickets = vm.openTicketsCount
         let pkgPending = vm.recentPackages.filter { $0.isPending }.count
@@ -736,16 +736,18 @@ struct HomeView: View {
                  metricAccent: pkgPending > 0 ? .blue : .neutral,
                  iconAccent: pkgPending > 0 ? .blue : .muted,
                  emphasis: .standard),
-            Tile(title: "Guests", icon: "person.crop.circle.badge.checkmark",
-                 route: .guests,
-                 metric: vm.activeGuestsCount > 0 ? "\(vm.activeGuestsCount) active" : "None active",
-                 metricAccent: vm.activeGuestsCount > 0 ? .blue : .neutral,
-                 iconAccent: .muted,
-                 emphasis: .quiet),
         ]
     }
 
-    /// Full-width Community tile shown beneath the grid.
+    private var guestsTile: Tile {
+        Tile(title: "Guests", icon: "person.crop.circle.badge.checkmark",
+             route: .guests,
+             metric: vm.activeGuestsCount > 0 ? "\(vm.activeGuestsCount) active" : "None active",
+             metricAccent: vm.activeGuestsCount > 0 ? .blue : .neutral,
+             iconAccent: .muted,
+             emphasis: .quiet)
+    }
+
     private var communityTile: Tile {
         Tile(title: "Community", icon: "person.2",
              route: .community,
@@ -777,7 +779,7 @@ struct HomeView: View {
     private var tileGrid: some View {
         VStack(spacing: Self.homeTileSpacing) {
             HStack(alignment: .top, spacing: Self.homeTileSpacing) {
-                // Left column — three stacked tiles, same height each
+                // Left column — Tickets + Packages stacked
                 VStack(spacing: Self.homeTileSpacing) {
                     ForEach(Array(leftColumnTiles.enumerated()), id: \.offset) { _, tile in
                         tileLink(for: tile)
@@ -785,14 +787,17 @@ struct HomeView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // Right — tall Payments card matching height of the three left tiles
+                // Right — tall Payments card matching height of the two left tiles
                 paymentsTallCard
                     .frame(maxWidth: .infinity)
-                    .frame(height: Self.homeTileHeight * 3 + Self.homeTileSpacing * 2)
+                    .frame(height: Self.homeTileHeight * 2 + Self.homeTileSpacing)
             }
 
-            // Full-width Community row below
-            tileLink(for: communityTile, fullWidth: true)
+            // Bottom row of the grid: Guests + Community side-by-side
+            HStack(alignment: .top, spacing: Self.homeTileSpacing) {
+                tileLink(for: guestsTile)
+                tileLink(for: communityTile)
+            }
         }
     }
 

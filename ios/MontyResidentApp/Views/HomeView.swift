@@ -83,6 +83,7 @@ enum HomeRoute: Hashable {
     case packages
     case payments
     case documents
+    case vendors
     case contacts
     case guests
     case community
@@ -170,6 +171,9 @@ struct HomeView: View {
 
                         tileGrid
 
+                        bottomQuickRow
+                            .padding(.top, 10)
+
                         announcementsSection
                             .padding(.top, 20)
                     }
@@ -201,6 +205,7 @@ struct HomeView: View {
             case .packages: PackagesListView()
             case .payments: PaymentsView()
             case .documents: DocumentsView()
+            case .vendors: ComingSoonView(title: "Vendors", icon: "hammer", blurb: "Trusted local vendors recommended by your building — coming soon.")
             case .contacts: ContactsView()
             case .guests: GuestsView()
             case .community: CommunityCategoriesView()
@@ -749,7 +754,7 @@ struct HomeView: View {
                  iconAccent: .muted,
                  emphasis: .standard),
 
-            // Row 3 — Guests / Amenities
+            // Row 3 — Guests / Amenities (quietest in the 2-col grid)
             Tile(title: "Guests", icon: "person.crop.circle.badge.checkmark",
                  route: .guests,
                  metric: vm.activeGuestsCount > 0 ? "\(vm.activeGuestsCount) active" : "None active",
@@ -759,18 +764,6 @@ struct HomeView: View {
             Tile(title: "Amenities", icon: "calendar",
                  route: .amenities,
                  metric: bookings > 0 ? "\(bookings) booked" : "Browse",
-                 iconAccent: .muted,
-                 emphasis: .quiet),
-
-            // Row 4 — Documents / Contacts (quietest)
-            Tile(title: "Documents", icon: "doc.text",
-                 route: .documents,
-                 metric: vm.documentsCount > 0 ? "\(vm.documentsCount) available" : "None yet",
-                 iconAccent: .muted,
-                 emphasis: .quiet),
-            Tile(title: "Contacts", icon: "phone",
-                 route: .contacts,
-                 metric: vm.contactsCount > 0 ? "\(vm.contactsCount) on staff" : "Building team",
                  iconAccent: .muted,
                  emphasis: .quiet),
         ]
@@ -842,6 +835,57 @@ struct HomeView: View {
                         .padding(.vertical, 10)
                     }
                     .frame(height: 68)
+                    .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
+                }
+                .buttonStyle(PressableCardStyle())
+                .simultaneousGesture(TapGesture().onEnded {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                })
+            }
+        }
+    }
+
+    // MARK: - Bottom quick row (Documents / Vendors / Contacts)
+
+    private struct QuickItem: Identifiable {
+        let id = UUID()
+        let title: String
+        let icon: String
+        let route: HomeRoute
+    }
+
+    private var bottomQuickRow: some View {
+        let items: [QuickItem] = [
+            QuickItem(title: "Documents", icon: "doc.text", route: .documents),
+            QuickItem(title: "Vendors", icon: "hammer", route: .vendors),
+            QuickItem(title: "Contacts", icon: "phone", route: .contacts),
+        ]
+        return HStack(spacing: 10) {
+            ForEach(items) { item in
+                NavigationLink(value: item.route) {
+                    ZStack {
+                        premiumCardBackground(radius: 16)
+                        VStack(spacing: 8) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .fill(Color.chrome(0.05))
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 16, weight: .regular))
+                                    .foregroundStyle(Color(hex: 0x8DA0B8).opacity(0.92))
+                            }
+                            .frame(width: 36, height: 36)
+                            Text(item.title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .tracking(-0.2)
+                                .foregroundStyle(Color.chrome(0.82))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 92)
                     .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
                 }
                 .buttonStyle(PressableCardStyle())

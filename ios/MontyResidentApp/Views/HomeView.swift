@@ -164,10 +164,10 @@ struct HomeView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Spacer matching the sticky hero row so cards begin below it.
-                    // Slight negative offset (-10) pulls content up a touch closer
-                    // to the sticky building/unit/profile row.
+                    // Small negative offset keeps the top of Ask Monty slightly
+                    // overlapping the bottom of the header image.
                     Color.clear
-                        .frame(height: heroVisibleHeight - 10)
+                        .frame(height: heroVisibleHeight - 2)
                         .allowsHitTesting(false)
 
                     Group {
@@ -193,6 +193,7 @@ struct HomeView: View {
                 .padding(.bottom, 40)
             }
             .ignoresSafeArea(edges: .top)
+            .scrollBounceBehavior(.basedOnSize)
             .refreshable { await reload(force: true) }
             .mask(scrollFadeMask.ignoresSafeArea())
 

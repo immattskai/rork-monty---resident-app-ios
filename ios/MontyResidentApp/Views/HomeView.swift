@@ -904,27 +904,22 @@ struct HomeView: View {
                 NavigationLink(value: item.route) {
                     ZStack {
                         premiumCardBackground(radius: 16)
-                        VStack(spacing: 8) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .fill(Color.chrome(0.05))
-                                Image(systemName: item.icon)
-                                    .font(.system(size: 16, weight: .regular))
-                                    .foregroundStyle(Color(hex: 0x8DA0B8).opacity(0.92))
-                            }
-                            .frame(width: 36, height: 36)
+                        HStack(spacing: 6) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(Color(hex: 0x8DA0B8).opacity(0.92))
                             Text(item.title)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.system(size: 11.5, weight: .semibold))
                                 .tracking(-0.2)
                                 .foregroundStyle(Color.chrome(0.82))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
                         }
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 4)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 92)
+                    .frame(height: Self.homeTileHeight)
                     .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
                 }
                 .buttonStyle(PressableCardStyle())

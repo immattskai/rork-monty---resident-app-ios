@@ -718,55 +718,40 @@ struct HomeView: View {
         }
     }
 
-    private var tiles: [Tile] {
+    /// Three left-column tiles (each the same height as Tickets).
+    private var leftColumnTiles: [Tile] {
         let openTickets = vm.openTicketsCount
-        let bookings = vm.upcomingBookings.count
         let pkgPending = vm.recentPackages.filter { $0.isPending }.count
-        let balanceCents = vm.balance?.balance_cents ?? 0
-        let paid = balanceCents <= 0
 
         return [
-            // Row 1 — Tickets / Payments (highest priority)
             Tile(title: "Tickets", icon: "wrench.and.screwdriver",
                  route: .tickets,
                  metric: openTickets > 0 ? "\(openTickets) open" : "All clear",
                  metricAccent: openTickets > 0 ? .orange : .neutral,
                  iconAccent: .orange,
                  emphasis: .strong),
-            Tile(title: "Payments", icon: "creditcard",
-                 route: .payments,
-                 metric: paid ? "Rent paid" : paymentsDueText(cents: balanceCents),
-                 metricAccent: paid ? .blue : .amber,
-                 iconAccent: paid ? .blue : .amber,
-                 emphasis: .strong,
-                 trailing: paid ? .check : .chevron),
-
-            // Row 2 — Packages / Community
             Tile(title: "Packages", icon: "shippingbox",
                  route: .packages,
                  metric: pkgPending > 0 ? "\(pkgPending) waiting" : "None waiting",
                  metricAccent: pkgPending > 0 ? .blue : .neutral,
                  iconAccent: pkgPending > 0 ? .blue : .muted,
                  emphasis: .standard),
-            Tile(title: "Community", icon: "person.2",
-                 route: .community,
-                 metric: vm.recentPostsCount > 0 ? "\(vm.recentPostsCount) new this week" : "No new posts",
-                 iconAccent: .muted,
-                 emphasis: .standard),
-
-            // Row 3 — Guests / Amenities (quietest in the 2-col grid)
             Tile(title: "Guests", icon: "person.crop.circle.badge.checkmark",
                  route: .guests,
                  metric: vm.activeGuestsCount > 0 ? "\(vm.activeGuestsCount) active" : "None active",
                  metricAccent: vm.activeGuestsCount > 0 ? .blue : .neutral,
                  iconAccent: .muted,
                  emphasis: .quiet),
-            Tile(title: "Amenities", icon: "calendar",
-                 route: .amenities,
-                 metric: bookings > 0 ? "\(bookings) booked" : "Browse",
-                 iconAccent: .muted,
-                 emphasis: .quiet),
         ]
+    }
+
+    /// Full-width Community tile shown beneath the grid.
+    private var communityTile: Tile {
+        Tile(title: "Community", icon: "person.2",
+             route: .community,
+             metric: vm.recentPostsCount > 0 ? "\(vm.recentPostsCount) new this week" : "No new posts",
+             iconAccent: .muted,
+             emphasis: .standard)
     }
 
     private func iconBackgroundFill(for tile: Tile) -> Color {
@@ -786,63 +771,171 @@ struct HomeView: View {
         return (f.string(from: NSNumber(value: dollars)) ?? "—") + " due"
     }
 
+    private static let homeTileHeight: CGFloat = 68
+    private static let homeTileSpacing: CGFloat = 10
+
     private var tileGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-            spacing: 10
-        ) {
-            ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
-                NavigationLink(value: tile.route) {
-                    ZStack {
-                        premiumCardBackground(radius: 16)
-                        HStack(spacing: 10) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .fill(iconBackgroundFill(for: tile))
-                                Image(systemName: tile.icon)
-                                    .font(.system(size: 16, weight: tile.emphasis == .strong ? .semibold : .regular))
-                                    .foregroundStyle(tile.iconAccent.color.opacity(tile.emphasis == .quiet ? 0.78 : 1))
-                            }
-                            .frame(width: 36, height: 36)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(tile.title)
-                                    .font(.system(size: 15, weight: tile.emphasis == .strong ? .bold : .semibold))
-                                    .tracking(-0.2)
-                                    .foregroundStyle(Color.chrome(tile.emphasis == .quiet ? 0.82 : 1))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.78)
-                                Text(tile.metric)
-                                    .font(.system(size: 11.5, weight: .medium))
-                                    .foregroundStyle(tile.metricAccent == .neutral ? Color.chrome(tile.emphasis == .quiet ? 0.50 : 0.62) : tile.metricAccent.color)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.78)
-                            }
-                            Spacer(minLength: 2)
-
-                            switch tile.trailing {
-                            case .chevron:
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.chrome(0.32))
-                            case .check:
-                                Image(systemName: "checkmark.circle")
-                                    .font(.system(size: 18, weight: .regular))
-                                    .foregroundStyle(Color(hex: 0x4DA3FF))
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+        VStack(spacing: Self.homeTileSpacing) {
+            HStack(alignment: .top, spacing: Self.homeTileSpacing) {
+                // Left column — three stacked tiles, same height each
+                VStack(spacing: Self.homeTileSpacing) {
+                    ForEach(Array(leftColumnTiles.enumerated()), id: \.offset) { _, tile in
+                        tileLink(for: tile)
                     }
-                    .frame(height: 68)
-                    .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
                 }
-                .buttonStyle(PressableCardStyle())
-                .simultaneousGesture(TapGesture().onEnded {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                })
+                .frame(maxWidth: .infinity)
+
+                // Right — tall Payments card matching height of the three left tiles
+                paymentsTallCard
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.homeTileHeight * 3 + Self.homeTileSpacing * 2)
             }
+
+            // Full-width Community row below
+            tileLink(for: communityTile, fullWidth: true)
         }
+    }
+
+    @ViewBuilder
+    private func tileLink(for tile: Tile, fullWidth: Bool = false) -> some View {
+        NavigationLink(value: tile.route) {
+            ZStack {
+                premiumCardBackground(radius: 16)
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(iconBackgroundFill(for: tile))
+                        Image(systemName: tile.icon)
+                            .font(.system(size: 16, weight: tile.emphasis == .strong ? .semibold : .regular))
+                            .foregroundStyle(tile.iconAccent.color.opacity(tile.emphasis == .quiet ? 0.78 : 1))
+                    }
+                    .frame(width: 36, height: 36)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(tile.title)
+                            .font(.system(size: 15, weight: tile.emphasis == .strong ? .bold : .semibold))
+                            .tracking(-0.2)
+                            .foregroundStyle(Color.chrome(tile.emphasis == .quiet ? 0.82 : 1))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                        Text(tile.metric)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(tile.metricAccent == .neutral ? Color.chrome(tile.emphasis == .quiet ? 0.50 : 0.62) : tile.metricAccent.color)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    }
+                    Spacer(minLength: 2)
+
+                    switch tile.trailing {
+                    case .chevron:
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.chrome(0.32))
+                    case .check:
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundStyle(Color(hex: 0x4DA3FF))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            .frame(maxWidth: fullWidth ? .infinity : nil)
+            .frame(height: Self.homeTileHeight)
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(PressableCardStyle())
+        .simultaneousGesture(TapGesture().onEnded {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        })
+    }
+
+    // MARK: - Tall Payments card
+
+    private var paymentsTallCard: some View {
+        let balanceCents = vm.balance?.balance_cents ?? 0
+        let paid = balanceCents <= 0
+        let accent: Color = paid ? Theme.accentBlue : Theme.accentAmber
+        let amountText: String = paid ? "Rent paid" : Self.currencyString(cents: balanceCents)
+        let captionText: String = paid ? "You're all caught up" : "Current balance"
+
+        return NavigationLink(value: HomeRoute.payments) {
+            ZStack {
+                premiumCardBackground(radius: 18)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(accent.opacity(0.12))
+                            Image(systemName: paid ? "checkmark.seal.fill" : "creditcard")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(accent)
+                        }
+                        .frame(width: 40, height: 40)
+
+                        Spacer(minLength: 4)
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.chrome(0.32))
+                            .padding(.top, 6)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Payments")
+                            .font(.system(size: 13, weight: .semibold))
+                            .tracking(-0.1)
+                            .foregroundStyle(Color.chrome(0.62))
+                        Text(amountText)
+                            .font(.system(size: paid ? 24 : 28, weight: .bold))
+                            .tracking(-0.6)
+                            .foregroundStyle(Color.chrome(1))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        Text(captionText)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(paid ? accent : Color.chrome(0.55))
+                            .lineLimit(1)
+                    }
+
+                    if !paid {
+                        Spacer(minLength: 6)
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Balance due")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .tracking(0.1)
+                        }
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(accent.opacity(0.12))
+                        )
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
+        }
+        .buttonStyle(PressableCardStyle())
+        .simultaneousGesture(TapGesture().onEnded {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        })
+    }
+
+    private static func currencyString(cents: Int) -> String {
+        let dollars = Double(cents) / 100.0
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: dollars)) ?? "—"
     }
 
     // MARK: - Bottom quick row (Documents / Vendors / Contacts)
@@ -859,8 +952,9 @@ struct HomeView: View {
             QuickItem(title: "Documents", icon: "doc.text", route: .documents),
             QuickItem(title: "Vendors", icon: "hammer", route: .vendors),
             QuickItem(title: "Contacts", icon: "phone", route: .contacts),
+            QuickItem(title: "Amenities", icon: "calendar", route: .amenities),
         ]
-        return HStack(spacing: 10) {
+        return HStack(spacing: 8) {
             ForEach(items) { item in
                 NavigationLink(value: item.route) {
                     ZStack {
@@ -875,14 +969,14 @@ struct HomeView: View {
                             }
                             .frame(width: 36, height: 36)
                             Text(item.title)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 12.5, weight: .semibold))
                                 .tracking(-0.2)
                                 .foregroundStyle(Color.chrome(0.82))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.8)
+                                .minimumScaleFactor(0.7)
                         }
                         .padding(.vertical, 12)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 4)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 92)

@@ -736,57 +736,60 @@ struct HomeView: View {
 
             // Bottom row of the grid: Guests + Community (+ Board if member)
             HStack(alignment: .top, spacing: Self.homeTileSpacing) {
-                tileLink(for: guestsTile)
-                tileLink(for: communityTile)
+                let compact = app.isBoardMember
+                tileLink(for: guestsTile, compact: compact)
+                tileLink(for: communityTile, compact: compact)
                 if app.isBoardMember {
-                    tileLink(for: boardTile)
+                    tileLink(for: boardTile, compact: compact)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func tileLink(for tile: Tile, fullWidth: Bool = false) -> some View {
+    private func tileLink(for tile: Tile, fullWidth: Bool = false, compact: Bool = false) -> some View {
+        let iconBox: CGFloat = compact ? 28 : 36
+        let iconSize: CGFloat = compact ? 13 : 16
+        let titleSize: CGFloat = compact ? 13 : 15
+        let metricSize: CGFloat = compact ? 10.5 : 11.5
+        let hSpacing: CGFloat = compact ? 7 : 10
+        let hPad: CGFloat = compact ? 9 : 12
+
         NavigationLink(value: tile.route) {
             ZStack {
                 premiumCardBackground(radius: 16)
-                HStack(spacing: 10) {
+                HStack(spacing: hSpacing) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        RoundedRectangle(cornerRadius: compact ? 9 : 11, style: .continuous)
                             .fill(iconBackgroundFill(for: tile))
                         Image(systemName: tile.icon)
-                            .font(.system(size: 16, weight: tile.emphasis == .strong ? .semibold : .regular))
+                            .font(.system(size: iconSize, weight: tile.emphasis == .strong ? .semibold : .regular))
                             .foregroundStyle(tile.iconAccent.color.opacity(tile.emphasis == .quiet ? 0.78 : 1))
                     }
-                    .frame(width: 36, height: 36)
+                    .frame(width: iconBox, height: iconBox)
 
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(tile.title)
-                            .font(.system(size: 15, weight: tile.emphasis == .strong ? .bold : .semibold))
+                            .font(.system(size: titleSize, weight: tile.emphasis == .strong ? .bold : .semibold))
                             .tracking(-0.2)
                             .foregroundStyle(Color.chrome(tile.emphasis == .quiet ? 0.82 : 1))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.78)
+                            .minimumScaleFactor(0.7)
                         Text(tile.metric)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: metricSize, weight: .medium))
                             .foregroundStyle(tile.metricAccent == .neutral ? Color.chrome(tile.emphasis == .quiet ? 0.50 : 0.62) : tile.metricAccent.color)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.78)
+                            .minimumScaleFactor(0.7)
                     }
                     Spacer(minLength: 2)
 
-                    switch tile.trailing {
-                    case .chevron:
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.chrome(0.32))
-                    case .check:
+                    if case .check = tile.trailing {
                         Image(systemName: "checkmark.circle")
                             .font(.system(size: 18, weight: .regular))
                             .foregroundStyle(Color(hex: 0x4DA3FF))
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, hPad)
                 .padding(.vertical, 10)
             }
             .frame(maxWidth: fullWidth ? .infinity : nil)
@@ -823,11 +826,6 @@ struct HomeView: View {
                         .frame(width: 40, height: 40)
 
                         Spacer(minLength: 4)
-
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.chrome(0.32))
-                            .padding(.top, 6)
                     }
 
                     Spacer(minLength: 0)

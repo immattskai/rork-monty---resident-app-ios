@@ -1087,18 +1087,55 @@ enum MontyResidentAppService {
     // MARK: - Board
 
     private nonisolated struct BoardMemberRow: Decodable { let id: String }
+    private nonisolated struct UnitPersonProfileRow: Decodable { let profile_id: String? }
 
-    /// Returns true if the current user is an active board member for this property.
-    static func fetchIsBoardMember(propertyId: String) async throws -> Bool {
+    /// Returns true if the current user — OR any resident sharing their active
+    /// unit — is an active board member for this property. Mirrors the web
+    /// `unit-board-membership` query so co-residents of a board member also
+    /// see the Board tile.
+    static func fetchIsBoardMember(propertyId: String, unitId: String? = nil) async throws -> Bool {
         guard let uid = currentUserId(), !propertyId.isEmpty else { return false }
-        let rows = (try? await api.from("board_members")
+
+        // A. Direct check — is the current user themselves a board member?
+        let direct = (try? await api.from("board_members")
             .select("id")
             .eq("profile_id", uid)
             .eq("property_id", propertyId)
             .eq("is_active", "true")
             .limit(1)
             .execute(as: [BoardMemberRow].self)) ?? []
-        return !rows.isEmpty
+        if !direct.isEmpty { return true }
+
+        // B. Unit-based check — is any resident on the active unit a board member?
+        guard let unitId, !unitId.isEmpty else { return false }
+        let people = (try? await api.from("unit_people")
+            .select("profile_id")
+            .eq("unit_id", unitId)
+            .limit(50)
+            .execute(as: [UnitPersonProfileRow].self)) ?? []
+        let ids = Array(Set(people.compactMap { $0.profile_id })).filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return false }
+        let shared = (try? await api.from("board_members")
+            .select("id")
+            .eq("property_id", propertyId)
+            .eq("is_active", "true")
+            .in("profile_id", ids)
+            .limit(1)
+            .execute(as: [BoardMemberRow].self)) ?? []
+        return !shared.isEmpty
+    }
+
+    /// Upcoming + recent board meetings for the resident's property. RLS scopes
+    /// the read; we only need to filter by property + visible statuses.
+    static func fetchBoardMeetings(propertyId: String) async throws -> [BoardMeeting] {
+        guard !propertyId.isEmpty else { return [] }
+        return try await api.from("board_meetings")
+            .select("id, title, scheduled_at, status, property_id")
+            .eq("property_id", propertyId)
+            .in("status", ["scheduled", "in_progress", "completed"])
+            .order("scheduled_at", ascending: false)
+            .limit(50)
+            .execute(as: [BoardMeeting].self)
     }
 
     // MARK: - Contacts

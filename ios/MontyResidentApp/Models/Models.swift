@@ -625,6 +625,18 @@ nonisolated struct GuestAccess: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - Board
+
+nonisolated struct BoardMeeting: Codable, Identifiable, Hashable {
+    let id: String
+    var title: String?
+    var scheduled_at: String?
+    var status: String?
+    var property_id: String?
+
+    var scheduledDate: Date? { Fmt.parseDate(scheduled_at) }
+}
+
 // MARK: - Contacts
 
 nonisolated struct StaffContact: Codable, Identifiable, Hashable {

@@ -108,7 +108,6 @@ enum HomeRoute: Hashable {
     case communityPost(postId: String)
     case askMontyResidentApp
     case board
-    case boardSection(String)
     case notificationSettings
     case announcementsAll
 }
@@ -181,11 +180,6 @@ struct HomeView: View {
                             .padding(.top, -6)
                             .padding(.bottom, 12)
 
-                        if app.isBoardMember {
-                            boardCard
-                                .padding(.bottom, 10)
-                        }
-
                         tileGrid
 
                         bottomQuickRow
@@ -230,8 +224,7 @@ struct HomeView: View {
             case .communityPost(let id): CommunityPostDetailView(postId: id)
             case .askMontyResidentApp: MontyChatView()
                     .navigationTransition(.zoom(sourceID: "monty", in: montyNS))
-            case .board: ComingSoonView(title: "Board", icon: "shield", blurb: "Governance & oversight — snapshot, meetings, tasks, and financials.")
-            case .boardSection(let s): ComingSoonView(title: s, icon: boardIcon(s), blurb: "Board \(s.lowercased()) — coming soon.")
+            case .board: BoardView()
             case .notificationSettings: NotificationSettingsView()
             case .announcementsAll: AnnouncementsListView()
             }
@@ -633,80 +626,6 @@ struct HomeView: View {
 
     // MARK: - Board
 
-    private var boardCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Theme.premiumDarkInset)
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0xF2A93B))
-                }
-                .frame(width: 36, height: 36)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Board")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("Governance & oversight")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                Spacer()
-            }
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                boardSubTile(title: "Snapshot", icon: "camera")
-                boardSubTile(title: "Meetings", icon: "shield")
-                boardSubTile(title: "Tasks", icon: "checklist")
-                boardSubTile(title: "Financials", icon: "creditcard")
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Theme.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Theme.border, lineWidth: 0.5)
-        )
-    }
-
-    private func boardSubTile(title: String, icon: String) -> some View {
-        NavigationLink(value: HomeRoute.boardSection(title)) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.background)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func boardIcon(_ s: String) -> String {
-        switch s {
-        case "Snapshot": return "camera"
-        case "Meetings": return "shield"
-        case "Tasks": return "checklist"
-        case "Financials": return "creditcard"
-        default: return "shield"
-        }
-    }
-
     // MARK: - Tile grid
 
     private struct Tile {
@@ -773,6 +692,15 @@ struct HomeView: View {
              emphasis: .standard)
     }
 
+    private var boardTile: Tile {
+        Tile(title: "Board", icon: "building.columns",
+             route: .board,
+             metric: "Board portal",
+             metricAccent: .blue,
+             iconAccent: .blue,
+             emphasis: .standard)
+    }
+
     private func iconBackgroundFill(for tile: Tile) -> Color {
         switch tile.iconAccent {
         case .orange: return Color(hex: 0xFF9A2F).opacity(0.12)
@@ -806,10 +734,13 @@ struct HomeView: View {
                     .frame(height: Self.homeTileHeight * 2 + Self.homeTileSpacing)
             }
 
-            // Bottom row of the grid: Guests + Community side-by-side
+            // Bottom row of the grid: Guests + Community (+ Board if member)
             HStack(alignment: .top, spacing: Self.homeTileSpacing) {
                 tileLink(for: guestsTile)
                 tileLink(for: communityTile)
+                if app.isBoardMember {
+                    tileLink(for: boardTile)
+                }
             }
         }
     }

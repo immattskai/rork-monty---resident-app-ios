@@ -440,10 +440,12 @@ extension MontyResidentAppService {
     /// Aggregated AR aging per unit. PII-free (no resident names).
     static func fetchBoardArAging(propertyId: String) async throws -> (totals: ArAgingTotals, units: [ArAgingUnit]) {
         guard !propertyId.isEmpty else { return (ArAgingTotals(), []) }
-        async let chargesT: [FinancialCharge] = (try? await api.from("financial_charges")
-            .select("id, unit_id, amount_cents, paid_cents, due_date, status")
+        // Open AR = `common_charges` rows whose status is 'pending' or 'overdue'.
+        // ('paid' rows are closed; 'partial' is not used in this schema.)
+        async let chargesT: [FinancialCharge] = (try? await api.from("common_charges")
+            .select("id, unit_id, amount, total_amount_cents, due_date, status")
             .eq("property_id", propertyId)
-            .in("status", ["open", "partial"])
+            .in("status", ["pending", "overdue"])
             .limit(5000)
             .execute(as: [FinancialCharge].self)) ?? []
 
@@ -464,7 +466,7 @@ extension MontyResidentAppService {
         for c in charges {
             let unitId = c.unit_id ?? "unassigned"
             let due = Fmt.parseDay(c.due_date) ?? Fmt.parseDate(c.due_date)
-            let balance = max(0, (c.amount_cents ?? 0) - (c.paid_cents ?? 0))
+            let balance = c.balanceCents
             guard balance > 0 else { continue }
             let daysOver: Int = {
                 guard let d = due else { return 0 }

@@ -177,14 +177,22 @@ struct PriorityBucket: Hashable, Identifiable {
 
 // MARK: - Financials (AR aging)
 
+/// Row from `common_charges`. `amount` is integer dollars (numeric); when present,
+/// `total_amount_cents` is authoritative cents. Open balance = full row amount
+/// because paid rows flip `status` → 'paid' (no partial paid_cents tracked).
 nonisolated struct FinancialCharge: Codable, Identifiable, Hashable {
     let id: String
     var unit_id: String?
-    var amount_cents: Int?
-    var paid_cents: Int?
+    var amount: Double?
+    var total_amount_cents: Int?
     var due_date: String?
     var status: String?
-    var gl_account_code: String?
+
+    /// Open balance in cents. Prefer `total_amount_cents`, fall back to `amount * 100`.
+    var balanceCents: Int {
+        if let c = total_amount_cents { return max(0, c) }
+        return max(0, Int(((amount ?? 0) * 100).rounded()))
+    }
 }
 
 nonisolated struct PropertyUnitLite: Codable, Identifiable, Hashable {

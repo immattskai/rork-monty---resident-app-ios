@@ -243,14 +243,11 @@ private struct PayAmountStep: View {
                     Haptics.tap()
                     dismiss()
                 } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color.chrome(0.08))
-                            .frame(width: 28, height: 28)
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.chrome(0.75))
-                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.chrome(0.75))
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.chrome(0.08)))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")

@@ -137,12 +137,16 @@ struct BoardSnapshotData: Hashable {
     var totalUnits: Int = 0
     var openTickets: Int = 0
     var prevOpenTickets: Int = 0
+    var urgentTickets: Int = 0
+    var highTickets: Int = 0
     var avgResolutionHours: Double = 0
     var prevAvgResolutionHours: Double = 0
     var openBoardTasks: Int = 0
     var taskByStatus: [String: Int] = [:] // backlog/todo/in_progress
     var weeklyVolume: [WeeklyTicketBucket] = []
+    var resolutionWeekly: [WeeklyAvgResolutionBucket] = []
     var priorityBuckets: [PriorityBucket] = []
+    var bucketUnit: Calendar.Component = .weekOfYear
 
     var occupancyPct: Double {
         guard totalUnits > 0 else { return 0 }
@@ -157,6 +161,12 @@ struct WeeklyTicketBucket: Hashable, Identifiable {
     let id = UUID()
     var weekStart: Date
     var count: Int
+}
+
+struct WeeklyAvgResolutionBucket: Hashable, Identifiable {
+    let id = UUID()
+    var weekStart: Date
+    var avgHours: Double
 }
 
 struct PriorityBucket: Hashable, Identifiable {

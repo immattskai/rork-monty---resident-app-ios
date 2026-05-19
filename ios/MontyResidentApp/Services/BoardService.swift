@@ -4,68 +4,86 @@ import Foundation
 extension MontyResidentAppService {
     // MARK: - Snapshot
 
-    /// Loads the 30-day Snapshot dashboard data in parallel.
-    static func fetchBoardSnapshot(propertyId: String) async throws -> BoardSnapshotData {
+    /// Loads the Snapshot dashboard data in parallel for the given range.
+    /// `rangeDays` controls the time window for tickets (default 30).
+    static func fetchBoardSnapshot(propertyId: String, rangeDays: Int = 30) async throws -> BoardSnapshotData {
         guard !propertyId.isEmpty else { return BoardSnapshotData() }
         let now = Date()
-        let startDate = Calendar.current.date(byAdding: .day, value: -30, to: now) ?? now
-        let prevStartDate = Calendar.current.date(byAdding: .day, value: -60, to: now) ?? now
+        let cal = Calendar(identifier: .gregorian)
+        let startDate = cal.date(byAdding: .day, value: -rangeDays, to: now) ?? now
+        let prevStartDate = cal.date(byAdding: .day, value: -(rangeDays * 2), to: now) ?? now
         let startISO = Fmt.iso.string(from: startDate)
         let prevISO = Fmt.iso.string(from: prevStartDate)
 
-        async let unitsT: [BoardSnapshotUnit] = (try? await api.from("property_units")
-            .select("is_occupied")
-            .eq("property_id", propertyId)
-            .limit(2000)
-            .execute(as: [BoardSnapshotUnit].self)) ?? []
+        // Run all queries in parallel. Capture errors so we can surface a real
+        // failure instead of silently rendering zeros.
+        async let unitsT: Result<[BoardSnapshotUnit], Error> = resultOf {
+            try await api.from("property_units")
+                .select("is_occupied")
+                .eq("property_id", propertyId)
+                .limit(5000)
+                .execute(as: [BoardSnapshotUnit].self)
+        }
 
-        async let ticketsT: [BoardSnapshotTicket] = (try? await api.from("tickets")
-            .select("id,status,priority,created_at,resolved_at")
-            .eq("property_id", propertyId)
-            .gte("created_at", startISO)
-            .limit(2000)
-            .execute(as: [BoardSnapshotTicket].self)) ?? []
+        async let ticketsT: Result<[BoardSnapshotTicket], Error> = resultOf {
+            try await api.from("tickets")
+                .select("id,status,priority,created_at,resolved_at")
+                .eq("property_id", propertyId)
+                .gte("created_at", startISO)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTicket].self)
+        }
 
-        async let prevTicketsT: [BoardSnapshotTicket] = (try? await api.from("tickets")
-            .select("id,status,priority,created_at,resolved_at")
-            .eq("property_id", propertyId)
-            .gte("created_at", prevISO)
-            .lt("created_at", startISO)
-            .limit(2000)
-            .execute(as: [BoardSnapshotTicket].self)) ?? []
+        async let prevTicketsT: Result<[BoardSnapshotTicket], Error> = resultOf {
+            try await api.from("tickets")
+                .select("id,status,priority,created_at,resolved_at")
+                .eq("property_id", propertyId)
+                .gte("created_at", prevISO)
+                .lt("created_at", startISO)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTicket].self)
+        }
 
-        async let tasksT: [BoardSnapshotTaskRow] = (try? await api.from("board_tasks")
-            .select("id,status")
-            .eq("property_id", propertyId)
-            .limit(2000)
-            .execute(as: [BoardSnapshotTaskRow].self)) ?? []
+        async let tasksT: Result<[BoardSnapshotTaskRow], Error> = resultOf {
+            try await api.from("board_tasks")
+                .select("id,status")
+                .eq("property_id", propertyId)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTaskRow].self)
+        }
 
-        let units = await unitsT
-        let tickets = await ticketsT
-        let prevTickets = await prevTicketsT
-        let tasks = await tasksT
+        // Resolve and throw the first error so the UI can show it.
+        let units = try (await unitsT).get()
+        let tickets = try (await ticketsT).get()
+        let prevTickets = try (await prevTicketsT).get()
+        let tasks = try (await tasksT).get()
 
         var data = BoardSnapshotData()
         data.totalUnits = units.count
         data.occupiedUnits = units.filter { $0.is_occupied == true }.count
 
-        let openStatuses: Set<String> = ["open", "in_progress"]
-        data.openTickets = tickets.filter { openStatuses.contains(($0.status ?? "").lowercased()) }.count
+        let openStatuses: Set<String> = ["open", "in_progress", "pending"]
+        let openInWindow = tickets.filter { openStatuses.contains(($0.status ?? "").lowercased()) }
+        data.openTickets = openInWindow.count
         data.prevOpenTickets = prevTickets.filter { openStatuses.contains(($0.status ?? "").lowercased()) }.count
+        data.urgentTickets = openInWindow.filter { ($0.priority ?? "").lowercased() == "urgent" }.count
+        data.highTickets = openInWindow.filter { ($0.priority ?? "").lowercased() == "high" }.count
 
-        // Avg resolution time in hours for resolved tickets in window.
-        func avg(_ rows: [BoardSnapshotTicket]) -> Double {
+        // Avg resolution: only tickets with status='resolved' AND resolved within window.
+        func avg(_ rows: [BoardSnapshotTicket], windowStart: Date) -> Double {
             let resolved = rows.compactMap { t -> Double? in
-                guard let c = t.createdDate, let r = t.resolvedDate, r >= c else { return nil }
+                guard (t.status ?? "").lowercased() == "resolved",
+                      let c = t.createdDate, let r = t.resolvedDate,
+                      r >= c, r >= windowStart else { return nil }
                 return r.timeIntervalSince(c) / 3600.0
             }
             guard !resolved.isEmpty else { return 0 }
             return resolved.reduce(0, +) / Double(resolved.count)
         }
-        data.avgResolutionHours = avg(tickets)
-        data.prevAvgResolutionHours = avg(prevTickets)
+        data.avgResolutionHours = avg(tickets, windowStart: startDate)
+        data.prevAvgResolutionHours = avg(prevTickets, windowStart: prevStartDate)
 
-        // Tasks: open = anything that isn't done.
+        // Open board tasks (anything that isn't done).
         let openTasks = tasks.filter { ($0.status ?? "").lowercased() != "done" }
         data.openBoardTasks = openTasks.count
         var byStatus: [String: Int] = [:]
@@ -75,37 +93,65 @@ extension MontyResidentAppService {
         }
         data.taskByStatus = byStatus
 
-        // Weekly volume (last 5 weeks). Week starts Sunday.
-        let cal = Calendar(identifier: .gregorian)
+        // Bucket charts by day when window < 14d, otherwise by week.
+        let bucketUnit: Calendar.Component = rangeDays < 14 ? .day : .weekOfYear
+        data.bucketUnit = bucketUnit
         let endOfNow = cal.startOfDay(for: now)
-        var weekStarts: [Date] = []
-        for i in stride(from: 4, through: 0, by: -1) {
-            if let monday = cal.date(byAdding: .weekOfYear, value: -i, to: endOfNow),
-               let weekStart = cal.dateInterval(of: .weekOfYear, for: monday)?.start {
-                weekStarts.append(weekStart)
-            }
+        let bucketCount = rangeDays < 14 ? rangeDays : min(8, max(4, Int(ceil(Double(rangeDays) / 7.0))))
+        var bucketStarts: [Date] = []
+        for i in stride(from: bucketCount - 1, through: 0, by: -1) {
+            let anchor = cal.date(byAdding: bucketUnit, value: -i, to: endOfNow) ?? endOfNow
+            let start: Date = {
+                if bucketUnit == .weekOfYear {
+                    return cal.dateInterval(of: .weekOfYear, for: anchor)?.start ?? cal.startOfDay(for: anchor)
+                }
+                return cal.startOfDay(for: anchor)
+            }()
+            bucketStarts.append(start)
         }
-        var weekly: [WeeklyTicketBucket] = []
-        for (i, start) in weekStarts.enumerated() {
-            let end = i + 1 < weekStarts.count ? weekStarts[i + 1] : (cal.date(byAdding: .day, value: 7, to: start) ?? start)
-            let count = tickets.filter {
+
+        var volume: [WeeklyTicketBucket] = []
+        var resolution: [WeeklyAvgResolutionBucket] = []
+        for (i, start) in bucketStarts.enumerated() {
+            let end: Date = {
+                if i + 1 < bucketStarts.count { return bucketStarts[i + 1] }
+                let step = bucketUnit == .weekOfYear ? 7 : 1
+                return cal.date(byAdding: .day, value: step, to: start) ?? start
+            }()
+            let created = tickets.filter {
                 guard let d = $0.createdDate else { return false }
                 return d >= start && d < end
             }.count
-            weekly.append(WeeklyTicketBucket(weekStart: start, count: count))
-        }
-        data.weeklyVolume = weekly
+            volume.append(WeeklyTicketBucket(weekStart: start, count: created))
 
-        // Priority buckets.
+            let resolvedHours: [Double] = tickets.compactMap { t in
+                guard (t.status ?? "").lowercased() == "resolved",
+                      let c = t.createdDate, let r = t.resolvedDate,
+                      r >= c, r >= start, r < end else { return nil }
+                return r.timeIntervalSince(c) / 3600.0
+            }
+            let avgH = resolvedHours.isEmpty ? 0 : resolvedHours.reduce(0, +) / Double(resolvedHours.count)
+            resolution.append(WeeklyAvgResolutionBucket(weekStart: start, avgHours: avgH))
+        }
+        data.weeklyVolume = volume
+        data.resolutionWeekly = resolution
+
+        // Priority breakdown — open tickets only, in window.
         let priorities = ["urgent", "high", "medium", "low"]
+        let priorityPool = tickets.filter { ($0.status ?? "").lowercased() != "resolved" }
         var pBuckets: [PriorityBucket] = []
         for p in priorities {
-            let c = tickets.filter { ($0.priority ?? "").lowercased() == p }.count
+            let c = priorityPool.filter { ($0.priority ?? "").lowercased() == p }.count
             pBuckets.append(PriorityBucket(priority: p, count: c))
         }
         data.priorityBuckets = pBuckets
 
         return data
+    }
+
+    private static func resultOf<T>(_ op: @MainActor () async throws -> T) async -> Result<T, Error> {
+        do { return .success(try await op()) }
+        catch { return .failure(error) }
     }
 
     // MARK: - Meeting detail

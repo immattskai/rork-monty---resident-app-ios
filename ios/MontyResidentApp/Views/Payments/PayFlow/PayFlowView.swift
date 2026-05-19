@@ -364,13 +364,13 @@ private struct PayAmountStep: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("Pay")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button {
                     Haptics.tap()
                     dismiss()
                 } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Color.chrome(0.75))
                 }
                 .accessibilityLabel("Close")

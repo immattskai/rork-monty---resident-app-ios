@@ -76,8 +76,9 @@ struct AddGuestSheet: View {
                             field {
                                 ZStack(alignment: .leading) {
                                     if input.guestEmail.isEmpty {
-                                        Text("guest@example.com")
+                                        Text(verbatim: "guest\u{200B}@example.com")
                                             .foregroundStyle(Theme.textMuted)
+                                            .tint(Theme.textMuted)
                                             .allowsHitTesting(false)
                                     }
                                     TextField("", text: $input.guestEmail)

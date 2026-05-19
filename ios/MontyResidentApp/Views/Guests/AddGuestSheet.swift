@@ -58,19 +58,27 @@ struct AddGuestSheet: View {
 
                         section("Phone") {
                             field {
-                                TextField("(555) 123-4567", text: $input.guestPhone)
-                                    .keyboardType(.phonePad)
-                                    .textContentType(.telephoneNumber)
+                                TextField(
+                                    "",
+                                    text: $input.guestPhone,
+                                    prompt: Text("(555) 123-4567").foregroundStyle(Theme.textMuted)
+                                )
+                                .keyboardType(.phonePad)
+                                .textContentType(.telephoneNumber)
                             }
                         }
 
                         section("Email") {
                             field {
-                                TextField("guest@example.com", text: $input.guestEmail)
-                                    .keyboardType(.emailAddress)
-                                    .textInputAutocapitalization(.never)
-                                    .textContentType(.emailAddress)
-                                    .autocorrectionDisabled()
+                                TextField(
+                                    "",
+                                    text: $input.guestEmail,
+                                    prompt: Text("guest@example.com").foregroundStyle(Theme.textMuted)
+                                )
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .textContentType(.emailAddress)
+                                .autocorrectionDisabled()
                             }
                         }
 

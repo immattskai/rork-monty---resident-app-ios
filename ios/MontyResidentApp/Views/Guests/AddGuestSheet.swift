@@ -64,7 +64,8 @@ struct AddGuestSheet: View {
                                     prompt: Text("(555) 123-4567").foregroundStyle(Theme.textMuted)
                                 )
                                 .keyboardType(.phonePad)
-                                .textContentType(.telephoneNumber)
+                                .textContentType(.none)
+                                .autocorrectionDisabled()
                             }
                         }
 
@@ -77,7 +78,7 @@ struct AddGuestSheet: View {
                                 )
                                 .keyboardType(.emailAddress)
                                 .textInputAutocapitalization(.never)
-                                .textContentType(.emailAddress)
+                                .textContentType(.none)
                                 .autocorrectionDisabled()
                             }
                         }

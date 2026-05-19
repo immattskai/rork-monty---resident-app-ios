@@ -196,7 +196,6 @@ struct HomeView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollDisabled(true)
             .refreshable { await reload(force: true) }
-            .mask(scrollFadeMask.ignoresSafeArea())
 
             // Sticky building name + unit + profile row sits ON TOP so it stays
             // crisp and fully tappable while cards fade away beneath it.

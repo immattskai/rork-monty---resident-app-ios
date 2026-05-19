@@ -26,7 +26,9 @@ final class BoardTasksViewModel {
 
     func updateStatus(_ id: String, status: String) async {
         if let i = tasks.firstIndex(where: { $0.id == id }) {
-            tasks[i].status = status
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                tasks[i].status = status
+            }
         }
         _ = try? await MontyResidentAppService.updateBoardTaskStatus(taskId: id, status: status)
     }
@@ -39,7 +41,9 @@ final class BoardTasksViewModel {
     }
 
     func delete(_ id: String) async {
-        tasks.removeAll { $0.id == id }
+        withAnimation(.easeOut(duration: 0.22)) {
+            tasks.removeAll { $0.id == id }
+        }
         try? await MontyResidentAppService.deleteBoardTask(taskId: id)
     }
 
@@ -52,18 +56,27 @@ final class BoardTasksViewModel {
                 priority: priority,
                 dueDate: dueDate
             )
-            tasks.insert(row, at: 0)
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+                tasks.insert(row, at: 0)
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 }
 
-private let kColumns: [(key: String, title: String)] = [
-    ("backlog", "Backlog"),
-    ("todo", "To Do"),
-    ("in_progress", "In Progress"),
-    ("done", "Done")
+private struct TaskColumn: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let accent: Color
+    let emptyLine: String
+}
+
+private let kTaskColumns: [TaskColumn] = [
+    .init(id: "backlog",     title: "Backlog",     accent: Color.chrome(0.45),       emptyLine: "Nothing in Backlog"),
+    .init(id: "todo",        title: "To Do",       accent: Theme.accentBlue,         emptyLine: "Nothing to do — yet"),
+    .init(id: "in_progress", title: "In Progress", accent: Theme.accentAmber,        emptyLine: "Nothing in progress"),
+    .init(id: "done",        title: "Done",        accent: Theme.success,            emptyLine: "Nothing completed yet")
 ]
 
 struct BoardTasksTab: View {
@@ -71,6 +84,7 @@ struct BoardTasksTab: View {
     @State private var vm = BoardTasksViewModel()
     @State private var showCreate = false
     @State private var selectedTask: BoardTask?
+    @State private var currentColumnId: String? = "backlog"
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -97,7 +111,8 @@ struct BoardTasksTab: View {
     @ViewBuilder
     private var content: some View {
         if vm.loading && vm.tasks.isEmpty {
-            ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: 240)
         } else if let err = vm.error, vm.tasks.isEmpty {
             VStack(spacing: 8) {
                 Text("Couldn't load tasks").font(.system(size: 15, weight: .semibold))
@@ -105,81 +120,64 @@ struct BoardTasksTab: View {
             }
             .padding(16)
         } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(kColumns, id: \.key) { col in
-                        column(key: col.key, title: col.title)
-                            .frame(width: 280)
-                    }
-                }
-                .padding(.horizontal, 2)
-                .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 12) {
+                kanban
+                pageIndicator
             }
-            .frame(minHeight: 380)
         }
     }
 
-    @ViewBuilder
-    private func column(key: String, title: String) -> some View {
-        let items = vm.tasks.filter { ($0.status ?? "").lowercased() == key }
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.chrome(0.55))
-                Text("\(items.count)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.chrome(0.45))
-                Spacer()
-            }
-            if items.isEmpty {
-                Text("—")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.chrome(0.40))
-                    .padding(.vertical, 28)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.chrome(0.08), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
-                    )
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(items) { t in
-                        TaskCard(task: t)
-                            .onTapGesture {
+    // MARK: - Kanban (paging)
+
+    private var kanban: some View {
+        GeometryReader { proxy in
+            let columnWidth = proxy.size.width
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 0) {
+                    ForEach(kTaskColumns) { col in
+                        ColumnPage(
+                            column: col,
+                            tasks: vm.tasks.filter { ($0.status ?? "").lowercased() == col.id },
+                            onTap: { task in
                                 Haptics.tap()
-                                selectedTask = t
+                                selectedTask = task
+                            },
+                            onMove: { task, newStatus in
+                                Task { await vm.updateStatus(task.id, status: newStatus) }
+                            },
+                            onPriority: { task, p in
+                                Task { await vm.updatePriority(task.id, priority: p) }
+                            },
+                            onDelete: { task in
+                                Task { await vm.delete(task.id) }
                             }
-                            .contextMenu {
-                                ForEach(kColumns, id: \.key) { c in
-                                    if c.key != (t.status ?? "") {
-                                        Button("Move to \(c.title)") {
-                                            Task { await vm.updateStatus(t.id, status: c.key) }
-                                        }
-                                    }
-                                }
-                                Divider()
-                                Menu("Priority") {
-                                    ForEach(["urgent", "high", "medium", "low"], id: \.self) { p in
-                                        Button(p.capitalized) {
-                                            Task { await vm.updatePriority(t.id, priority: p) }
-                                        }
-                                    }
-                                }
-                                Divider()
-                                Button("Delete", role: .destructive) {
-                                    Task { await vm.delete(t.id) }
-                                }
-                            }
+                        )
+                        .frame(width: columnWidth)
+                        .id(col.id)
                     }
                 }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentColumnId)
+            .onChange(of: currentColumnId) { _, _ in
+                Haptics.tap()
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.chrome(0.04))
-        )
+        .frame(minHeight: 380)
+    }
+
+    private var pageIndicator: some View {
+        HStack(spacing: 6) {
+            ForEach(kTaskColumns) { col in
+                let active = currentColumnId == col.id
+                Capsule()
+                    .fill(active ? col.accent : Color.chrome(0.14))
+                    .frame(width: active ? 18 : 6, height: 6)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentColumnId)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var createFAB: some View {
@@ -192,7 +190,7 @@ struct BoardTasksTab: View {
                 .foregroundStyle(.white)
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(Theme.accentBlue))
-                .shadow(color: Theme.accentBlue.opacity(0.45), radius: 14, y: 6)
+                .shadow(color: Theme.accentBlue.opacity(0.35), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 4)
@@ -200,75 +198,153 @@ struct BoardTasksTab: View {
     }
 }
 
-// MARK: - Task card
+// MARK: - Column page
 
-private struct TaskCard: View {
-    let task: BoardTask
+private struct ColumnPage: View {
+    let column: TaskColumn
+    let tasks: [BoardTask]
+    let onTap: (BoardTask) -> Void
+    let onMove: (BoardTask, String) -> Void
+    let onPriority: (BoardTask, String) -> Void
+    let onDelete: (BoardTask) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Text(task.title?.isEmpty == false ? task.title! : "Untitled task")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(2)
-                Spacer(minLength: 0)
-                priorityPill
-            }
-            HStack(spacing: 8) {
-                if let date = task.dueDate {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(Fmt.short(date))
-                            .font(.system(size: 11, weight: .semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            if tasks.isEmpty {
+                Text(column.emptyLine)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.chrome(0.42))
+                    .padding(.top, 4)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(tasks.enumerated()), id: \.element.id) { idx, t in
+                        TaskRow(task: t, accent: column.accent)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onTap(t)
+                            }
+                            .contextMenu {
+                                ForEach(kTaskColumns) { c in
+                                    if c.id != column.id {
+                                        Button("Move to \(c.title)") {
+                                            onMove(t, c.id)
+                                        }
+                                    }
+                                }
+                                Divider()
+                                Menu("Priority") {
+                                    ForEach(["urgent", "high", "medium", "low"], id: \.self) { p in
+                                        Button(p.capitalized) { onPriority(t, p) }
+                                    }
+                                }
+                                Divider()
+                                Button("Delete", role: .destructive) { onDelete(t) }
+                            }
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .top)),
+                                removal: .opacity.combined(with: .scale(scale: 0.95))
+                            ))
+                        if idx < tasks.count - 1 {
+                            Divider()
+                                .background(Color.chrome(0.06))
+                                .padding(.leading, 28)
+                        }
                     }
-                    .foregroundStyle(task.isOverdue ? Theme.danger : Color.chrome(0.55))
                 }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.premiumCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.chrome(0.06), lineWidth: 0.6)
+                )
+                .clipShape(.rect(cornerRadius: 16))
+                .shadow(color: Theme.cardDropShadow, radius: 8, y: 3)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(column.title.uppercased())
+                    .font(.system(size: 11.5, weight: .heavy))
+                    .tracking(1.4)
+                    .foregroundStyle(Theme.textPrimary)
+                Text("\(tasks.count)")
+                    .font(.system(size: 10.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(column.accent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(column.accent.opacity(0.14)))
                 Spacer(minLength: 0)
-                avatar
+            }
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [column.accent.opacity(0.85), column.accent.opacity(0.0)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1.5)
+        }
+    }
+}
+
+// MARK: - Compact task row
+
+private struct TaskRow: View {
+    let task: BoardTask
+    let accent: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(priorityColor)
+                .frame(width: 8, height: 8)
+                .overlay(
+                    Circle().stroke(priorityColor.opacity(0.35), lineWidth: 3)
+                        .scaleEffect(1.0)
+                )
+                .frame(width: 14, height: 14)
+            Text(task.title?.isEmpty == false ? task.title! : "Untitled task")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            if let date = task.dueDate {
+                Text(Fmt.short(date))
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(task.isOverdue ? Theme.danger : Color.chrome(0.55))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(task.isOverdue ? Theme.danger.opacity(0.12) : Color.chrome(0.05))
+                    )
+            }
+            if let a = task.assignee {
+                Text(a.initials)
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(accent.opacity(0.9)))
             }
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.premiumCard)
-                RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.chrome(0.06), lineWidth: 0.6)
-            }
-        )
-        .clipShape(.rect(cornerRadius: 14))
-        .shadow(color: Theme.cardDropShadow, radius: 6, y: 2)
     }
 
-    @ViewBuilder
-    private var priorityPill: some View {
-        let p = (task.priority ?? "medium").lowercased()
-        let color: Color = {
-            switch p {
-            case "urgent": return Theme.danger
-            case "high": return Theme.accentAmber
-            case "medium": return Theme.accentBlue
-            default: return Color.chrome(0.45)
-            }
-        }()
-        Text(p.uppercased())
-            .font(.system(size: 9, weight: .heavy))
-            .tracking(0.6)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.14)))
-    }
-
-    @ViewBuilder
-    private var avatar: some View {
-        if let a = task.assignee {
-            Text(a.initials)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white)
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(Theme.accentBlue.opacity(0.85)))
+    private var priorityColor: Color {
+        switch (task.priority ?? "medium").lowercased() {
+        case "urgent": return Theme.danger
+        case "high":   return Theme.accentAmber
+        case "medium": return Theme.accentBlue
+        default:       return Color.chrome(0.45)
         }
     }
 }

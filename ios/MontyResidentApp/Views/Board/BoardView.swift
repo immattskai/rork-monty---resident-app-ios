@@ -46,13 +46,17 @@ enum BoardTab: String, CaseIterable, Hashable {
         case .financials: return "dollarsign.circle"
         }
     }
+
+    /// Snapshot is visible to all residents; the rest are board-only.
+    var requiresBoardMembership: Bool { self != .snapshot }
 }
 
 struct BoardView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var vm = BoardViewModel()
-    @State private var tab: BoardTab = .meetings
+    @State private var tab: BoardTab = .snapshot
+    @State private var selectedMeeting: BoardMeeting?
 
     private let horizontalPadding: CGFloat = 16
 
@@ -64,6 +68,11 @@ struct BoardView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .task(id: app.activeUnit?.property_id) { await reload() }
+        .sheet(item: $selectedMeeting) { meeting in
+            NavigationStack {
+                BoardMeetingDetailView(meetingId: meeting.id, initialTitle: meeting.title)
+            }
+        }
     }
 
     @ViewBuilder
@@ -101,7 +110,7 @@ struct BoardView: View {
                             .font(.system(size: 28, weight: .bold))
                             .tracking(-0.6)
                             .foregroundStyle(Theme.textPrimary)
-                        Text("Governance & oversight")
+                        Text(app.isBoardMember ? "Governance & oversight" : "Snapshot for residents")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color.chrome(0.55))
                     }
@@ -142,17 +151,18 @@ struct BoardView: View {
     @ViewBuilder
     private func tabPill(_ t: BoardTab) -> some View {
         let active = tab == t
+        let locked = t.requiresBoardMembership && !app.isBoardMember
         Button {
             Haptics.tap()
             withAnimation(.easeOut(duration: 0.22)) { tab = t }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: t.icon)
+                Image(systemName: locked ? "lock.fill" : t.icon)
                     .font(.system(size: 12, weight: .semibold))
                 Text(t.title)
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(active ? Color.white : Theme.textPrimary)
+            .foregroundStyle(active ? Color.white : (locked ? Color.chrome(0.40) : Theme.textPrimary))
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(
@@ -171,18 +181,52 @@ struct BoardView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        switch tab {
-        case .meetings: meetingsTab
-        case .snapshot: comingSoonCard(title: "Snapshot",
-                                        icon: "chart.bar.xaxis",
-                                        blurb: "30-day health metrics, delinquency, and financial summaries land here next.")
-        case .tasks:    comingSoonCard(title: "Tasks",
-                                        icon: "checklist",
-                                        blurb: "Track and assign board tasks in a Kanban-style board.")
-        case .financials: comingSoonCard(title: "Financials",
-                                          icon: "dollarsign.circle",
-                                          blurb: "Read-only financial summary for the board.")
+        if tab.requiresBoardMembership && !app.isBoardMember {
+            accessRestrictedCard
+        } else {
+            switch tab {
+            case .snapshot:
+                BoardSnapshotTab(propertyId: app.activePropertyId) { jumpTo in
+                    withAnimation(.easeOut(duration: 0.22)) { tab = jumpTo }
+                }
+            case .meetings:
+                meetingsTab
+            case .tasks:
+                BoardTasksTab(propertyId: app.activePropertyId)
+            case .financials:
+                BoardFinancialsTab(propertyId: app.activePropertyId)
+            }
         }
+    }
+
+    private var accessRestrictedCard: some View {
+        ZStack {
+            premiumCard(radius: 18)
+            VStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.chrome(0.05))
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.chrome(0.62))
+                }
+                .frame(width: 56, height: 56)
+                VStack(spacing: 4) {
+                    Text("Access Restricted")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("This view is for board members only. Your account doesn't have board access for this property.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.chrome(0.55))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
+            }
+            .padding(.vertical, 32)
+            .padding(.horizontal, 22)
+            .frame(maxWidth: .infinity)
+        }
+        .clipShape(.rect(cornerRadius: 18))
     }
 
     // MARK: - Meetings
@@ -216,14 +260,26 @@ struct BoardView: View {
                 if !split.upcoming.isEmpty {
                     section("UPCOMING", count: split.upcoming.count) {
                         VStack(spacing: 10) {
-                            ForEach(split.upcoming) { m in MeetingRow(meeting: m) }
+                            ForEach(split.upcoming) { m in
+                                MeetingRow(meeting: m)
+                                    .onTapGesture {
+                                        Haptics.tap()
+                                        selectedMeeting = m
+                                    }
+                            }
                         }
                     }
                 }
                 if !split.past.isEmpty {
                     section("PAST", count: split.past.count) {
                         VStack(spacing: 10) {
-                            ForEach(split.past) { m in MeetingRow(meeting: m) }
+                            ForEach(split.past) { m in
+                                MeetingRow(meeting: m)
+                                    .onTapGesture {
+                                        Haptics.tap()
+                                        selectedMeeting = m
+                                    }
+                            }
                         }
                     }
                 }
@@ -302,44 +358,6 @@ struct BoardView: View {
     // MARK: - Shared
 
     @ViewBuilder
-    private func comingSoonCard(title: String, icon: String, blurb: String) -> some View {
-        ZStack {
-            premiumCard(radius: 18)
-            VStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Theme.accentBlue.opacity(0.10))
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(Theme.accentBlue)
-                }
-                .frame(width: 56, height: 56)
-                VStack(spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text(blurb)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.chrome(0.55))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-                }
-                Text("COMING SOON")
-                    .font(.system(size: 10, weight: .heavy))
-                    .tracking(1.4)
-                    .foregroundStyle(Theme.accentBlue)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Theme.accentBlue.opacity(0.12)))
-            }
-            .padding(.vertical, 28)
-            .padding(.horizontal, 22)
-            .frame(maxWidth: .infinity)
-        }
-        .clipShape(.rect(cornerRadius: 18))
-    }
-
-    @ViewBuilder
     private func section<Content: View>(_ title: String, count: Int, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -404,12 +422,16 @@ private struct MeetingRow: View {
                     statusBadge
                 }
                 Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Color.chrome(0.35))
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .clipShape(.rect(cornerRadius: 16))
         .shadow(color: Theme.cardDropShadow, radius: 10, x: 0, y: 4)
+        .contentShape(Rectangle())
     }
 
     private var dateBlock: some View {

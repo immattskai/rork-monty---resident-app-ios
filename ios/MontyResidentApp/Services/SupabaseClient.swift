@@ -215,6 +215,50 @@ final class SupabaseAPI {
         }
     }
 
+    /// Upsert one row with `Prefer: resolution=merge-duplicates`. Caller supplies
+    /// the `on_conflict` column list (comma-separated). Returns the resolved row.
+    @discardableResult
+    func upsert<Body: Encodable, T: Decodable>(
+        into table: String,
+        body: Body,
+        onConflict: String,
+        returning: T.Type
+    ) async throws -> T {
+        guard var comps = URLComponents(string: SupabaseConfig.url + "/rest/v1/" + table) else {
+            throw SupabaseError.badURL
+        }
+        comps.queryItems = [URLQueryItem(name: "on_conflict", value: onConflict)]
+        guard let url = comps.url else { throw SupabaseError.badURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("resolution=merge-duplicates,return=representation", forHTTPHeaderField: "Prefer")
+        req.httpBody = try JSONEncoder().encode(body)
+        let data = try await performData(req)
+        do {
+            let rows = try JSONDecoder().decode([T].self, from: data)
+            guard let first = rows.first else {
+                throw SupabaseError.decoding("Empty upsert response")
+            }
+            return first
+        } catch {
+            throw SupabaseError.decoding(String(describing: error))
+        }
+    }
+
+    /// DELETE rows matched by `id`. Best-effort — returns silently on success.
+    func delete(table: String, id: String) async throws {
+        guard var comps = URLComponents(string: SupabaseConfig.url + "/rest/v1/" + table) else {
+            throw SupabaseError.badURL
+        }
+        comps.queryItems = [URLQueryItem(name: "id", value: "eq.\(id)")]
+        guard let url = comps.url else { throw SupabaseError.badURL }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        _ = try await performData(req)
+    }
+
     // Used by Query
     func performData(_ req: URLRequest, retryOnAuth: Bool = true) async throws -> Data {
         var req = req
@@ -299,6 +343,18 @@ struct Query {
     func lte(_ column: String, _ value: String) -> Query {
         var q = self
         q.queryItems.append(URLQueryItem(name: column, value: "lte.\(value)"))
+        return q
+    }
+
+    func lt(_ column: String, _ value: String) -> Query {
+        var q = self
+        q.queryItems.append(URLQueryItem(name: column, value: "lt.\(value)"))
+        return q
+    }
+
+    func gt(_ column: String, _ value: String) -> Query {
+        var q = self
+        q.queryItems.append(URLQueryItem(name: column, value: "gt.\(value)"))
         return q
     }
 

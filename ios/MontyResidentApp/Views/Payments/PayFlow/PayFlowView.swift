@@ -204,6 +204,7 @@ private struct PayAmountStep: View {
     @Bindable var vm: PayFlowViewModel
     let onContinue: () -> Void
 
+    @Environment(\.dismiss) private var dismiss
     @State private var customAmountText: String = ""
     @State private var useCustom: Bool = false
 
@@ -236,6 +237,25 @@ private struct PayAmountStep: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("Pay")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Haptics.tap()
+                    dismiss()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.chrome(0.08))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.chrome(0.75))
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+            }
+        }
     }
 
     private var titleHeader: some View {

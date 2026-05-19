@@ -186,11 +186,11 @@ struct BoardTasksTab: View {
             showCreate = true
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 52, height: 52)
+                .frame(width: 38, height: 38)
                 .background(Circle().fill(Theme.accentBlue))
-                .shadow(color: Theme.accentBlue.opacity(0.35), radius: 10, y: 4)
+                .shadow(color: Theme.accentBlue.opacity(0.25), radius: 6, y: 2)
         }
         .buttonStyle(.plain)
         .padding(.trailing, 4)

@@ -358,6 +358,13 @@ struct Query {
         return q
     }
 
+    /// Negated operator. Example: `.not("resolved_at", "is", "null")` -> `resolved_at=not.is.null`.
+    func not(_ column: String, _ op: String, _ value: String) -> Query {
+        var q = self
+        q.queryItems.append(URLQueryItem(name: column, value: "not.\(op).\(value)"))
+        return q
+    }
+
     func order(_ column: String, ascending: Bool = true) -> Query {
         var q = self
         q.queryItems.append(URLQueryItem(name: "order", value: "\(column).\(ascending ? "asc" : "desc")"))

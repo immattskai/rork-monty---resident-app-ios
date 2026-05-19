@@ -15,8 +15,11 @@ extension MontyResidentAppService {
         let startISO = Fmt.iso.string(from: startDate)
         let prevISO = Fmt.iso.string(from: prevStartDate)
 
-        // Run all queries in parallel. Capture errors so we can surface a real
-        // failure instead of silently rendering zeros.
+        // Status enums in our schema (lowercase): 'open', 'in_progress', 'resolved',
+        // 'closed', 'cancelled'. "Open" set = open + in_progress (NOT 'pending').
+        let openStatusList = ["open", "in_progress"]
+
+        // 6 parallel queries. Capture errors so we can surface real failures.
         async let unitsT: Result<[BoardSnapshotUnit], Error> = resultOf {
             try await api.from("property_units")
                 .select("is_occupied")
@@ -25,21 +28,59 @@ extension MontyResidentAppService {
                 .execute(as: [BoardSnapshotUnit].self)
         }
 
-        async let ticketsT: Result<[BoardSnapshotTicket], Error> = resultOf {
+        // Q2 — currently open tickets (no created_at filter). Drives KPI + priority donut.
+        async let openTicketsT: Result<[BoardSnapshotTicket], Error> = resultOf {
             try await api.from("tickets")
                 .select("id,status,priority,created_at,resolved_at")
                 .eq("property_id", propertyId)
-                .gte("created_at", startISO)
+                .in("status", openStatusList)
                 .limit(5000)
                 .execute(as: [BoardSnapshotTicket].self)
         }
 
-        async let prevTicketsT: Result<[BoardSnapshotTicket], Error> = resultOf {
+        // Q3 — prev-window snapshot for the open-tickets delta chip:
+        // tickets created in the previous window that are still open today.
+        async let openPrevT: Result<[BoardSnapshotTicket], Error> = resultOf {
             try await api.from("tickets")
                 .select("id,status,priority,created_at,resolved_at")
                 .eq("property_id", propertyId)
+                .in("status", openStatusList)
                 .gte("created_at", prevISO)
                 .lt("created_at", startISO)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTicket].self)
+        }
+
+        // Q4 — resolved-in-window: gate by resolved_at, NOT created_at.
+        // Drives Avg Resolution KPI + resolution chart.
+        async let resolvedT: Result<[BoardSnapshotTicket], Error> = resultOf {
+            try await api.from("tickets")
+                .select("id,status,priority,created_at,resolved_at")
+                .eq("property_id", propertyId)
+                .not("resolved_at", "is", "null")
+                .gte("resolved_at", startISO)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTicket].self)
+        }
+
+        // Q4b — previous resolved window, for the resolution delta chip.
+        async let resolvedPrevT: Result<[BoardSnapshotTicket], Error> = resultOf {
+            try await api.from("tickets")
+                .select("id,status,priority,created_at,resolved_at")
+                .eq("property_id", propertyId)
+                .not("resolved_at", "is", "null")
+                .gte("resolved_at", prevISO)
+                .lt("resolved_at", startISO)
+                .limit(5000)
+                .execute(as: [BoardSnapshotTicket].self)
+        }
+
+        // Q5 — tickets created in window (for the volume chart only).
+        async let createdInWindowT: Result<[BoardSnapshotTicket], Error> = resultOf {
+            try await api.from("tickets")
+                .select("id,status,priority,created_at,resolved_at")
+                .eq("property_id", propertyId)
+                .gte("created_at", startISO)
                 .limit(5000)
                 .execute(as: [BoardSnapshotTicket].self)
         }
@@ -52,36 +93,35 @@ extension MontyResidentAppService {
                 .execute(as: [BoardSnapshotTaskRow].self)
         }
 
-        // Resolve and throw the first error so the UI can show it.
         let units = try (await unitsT).get()
-        let tickets = try (await ticketsT).get()
-        let prevTickets = try (await prevTicketsT).get()
+        let openTickets = try (await openTicketsT).get()
+        let openPrev = try (await openPrevT).get()
+        let resolved = try (await resolvedT).get()
+        let resolvedPrev = try (await resolvedPrevT).get()
+        let createdInWindow = try (await createdInWindowT).get()
         let tasks = try (await tasksT).get()
 
         var data = BoardSnapshotData()
         data.totalUnits = units.count
         data.occupiedUnits = units.filter { $0.is_occupied == true }.count
 
-        let openStatuses: Set<String> = ["open", "in_progress", "pending"]
-        let openInWindow = tickets.filter { openStatuses.contains(($0.status ?? "").lowercased()) }
-        data.openTickets = openInWindow.count
-        data.prevOpenTickets = prevTickets.filter { openStatuses.contains(($0.status ?? "").lowercased()) }.count
-        data.urgentTickets = openInWindow.filter { ($0.priority ?? "").lowercased() == "urgent" }.count
-        data.highTickets = openInWindow.filter { ($0.priority ?? "").lowercased() == "high" }.count
+        // Open Work Orders — currently open, regardless of age.
+        data.openTickets = openTickets.count
+        data.prevOpenTickets = openPrev.count
+        data.urgentTickets = openTickets.filter { ($0.priority ?? "").lowercased() == "urgent" }.count
+        data.highTickets = openTickets.filter { ($0.priority ?? "").lowercased() == "high" }.count
 
-        // Avg resolution: only tickets with status='resolved' AND resolved within window.
-        func avg(_ rows: [BoardSnapshotTicket], windowStart: Date) -> Double {
-            let resolved = rows.compactMap { t -> Double? in
-                guard (t.status ?? "").lowercased() == "resolved",
-                      let c = t.createdDate, let r = t.resolvedDate,
-                      r >= c, r >= windowStart else { return nil }
+        // Avg resolution — averaged across tickets resolved in window.
+        func avg(_ rows: [BoardSnapshotTicket]) -> Double {
+            let hours = rows.compactMap { t -> Double? in
+                guard let c = t.createdDate, let r = t.resolvedDate, r >= c else { return nil }
                 return r.timeIntervalSince(c) / 3600.0
             }
-            guard !resolved.isEmpty else { return 0 }
-            return resolved.reduce(0, +) / Double(resolved.count)
+            guard !hours.isEmpty else { return 0 }
+            return hours.reduce(0, +) / Double(hours.count)
         }
-        data.avgResolutionHours = avg(tickets, windowStart: startDate)
-        data.prevAvgResolutionHours = avg(prevTickets, windowStart: prevStartDate)
+        data.avgResolutionHours = avg(resolved)
+        data.prevAvgResolutionHours = avg(resolvedPrev)
 
         // Open board tasks (anything that isn't done).
         let openTasks = tasks.filter { ($0.status ?? "").lowercased() != "done" }
@@ -118,15 +158,15 @@ extension MontyResidentAppService {
                 let step = bucketUnit == .weekOfYear ? 7 : 1
                 return cal.date(byAdding: .day, value: step, to: start) ?? start
             }()
-            let created = tickets.filter {
+            let created = createdInWindow.filter {
                 guard let d = $0.createdDate else { return false }
                 return d >= start && d < end
             }.count
             volume.append(WeeklyTicketBucket(weekStart: start, count: created))
 
-            let resolvedHours: [Double] = tickets.compactMap { t in
-                guard (t.status ?? "").lowercased() == "resolved",
-                      let c = t.createdDate, let r = t.resolvedDate,
+            // Bucket by resolved_at (not created_at) using the resolved-in-window slice.
+            let resolvedHours: [Double] = resolved.compactMap { t in
+                guard let c = t.createdDate, let r = t.resolvedDate,
                       r >= c, r >= start, r < end else { return nil }
                 return r.timeIntervalSince(c) / 3600.0
             }
@@ -136,13 +176,13 @@ extension MontyResidentAppService {
         data.weeklyVolume = volume
         data.resolutionWeekly = resolution
 
-        // Priority breakdown — open tickets only, in window.
+        // Priority breakdown — currently open tickets, no time filter.
+        // Drop priorities with 0 count.
         let priorities = ["urgent", "high", "medium", "low"]
-        let priorityPool = tickets.filter { ($0.status ?? "").lowercased() != "resolved" }
         var pBuckets: [PriorityBucket] = []
         for p in priorities {
-            let c = priorityPool.filter { ($0.priority ?? "").lowercased() == p }.count
-            pBuckets.append(PriorityBucket(priority: p, count: c))
+            let c = openTickets.filter { ($0.priority ?? "").lowercased() == p }.count
+            if c > 0 { pBuckets.append(PriorityBucket(priority: p, count: c)) }
         }
         data.priorityBuckets = pBuckets
 

@@ -20,6 +20,15 @@ final class PayFlowViewModel {
     var amountCents: Int
     var selectedChargeId: String?
 
+    /// When false (default), pay the full open balance — all charges in `charges`
+    /// get allocated their full amount. When true, the user is splitting a custom
+    /// amount across one or more charges and `allocations` drives per-charge values.
+    var useCustom: Bool = false
+
+    /// Per-charge allocation (only consulted in custom mode). Sum should equal
+    /// `amountCents` before continue is enabled.
+    var allocations: [String: Int] = [:]
+
     var methods: [MoovPaymentMethod] = []
     var loadingMethods: Bool = false
     var methodsError: String?
@@ -34,6 +43,8 @@ final class PayFlowViewModel {
     var submitError: String?
 
     var result: TransferResult?
+    /// Aggregate total actually charged across multi-call submits.
+    var aggregateTotalCents: Int = 0
 
     /// Whether to show "+ Add bank" / "+ Add card" sheets.
     var presentingAddBank: Bool = false
@@ -52,8 +63,95 @@ final class PayFlowViewModel {
             acc + Int((c.amount ?? 0).rounded())
         }
         self.amountCents = total
-        // Default to first charge so server can attribute the payment.
+        // Default to first charge so server can attribute the payment in
+        // single-charge legacy paths (review/submit fallbacks).
         self.selectedChargeId = charges.first?.id
+        // Seed full-balance allocations so submit can loop transparently.
+        for c in charges {
+            self.allocations[c.id] = Int((c.amount ?? 0).rounded())
+        }
+    }
+
+    /// Sorted oldest-due first; used for split-evenly and apply-to-oldest helpers.
+    var chargesOldestFirst: [CommonCharge] {
+        charges.sorted { a, b in
+            let da = Fmt.parseDay(a.due_date) ?? Fmt.parseDate(a.due_date) ?? .distantFuture
+            let db = Fmt.parseDay(b.due_date) ?? Fmt.parseDate(b.due_date) ?? .distantFuture
+            return da < db
+        }
+    }
+
+    /// Charges that will actually be paid in this flow (allocation > 0).
+    var activeAllocations: [(charge: CommonCharge, cents: Int)] {
+        chargesOldestFirst.compactMap { c in
+            let cents = allocations[c.id] ?? 0
+            return cents > 0 ? (c, cents) : nil
+        }
+    }
+
+    var allocatedTotalCents: Int {
+        allocations.values.reduce(0, +)
+    }
+
+    var isAllocationBalanced: Bool {
+        if !useCustom { return amountCents == totalBalanceCents }
+        return allocatedTotalCents == amountCents && amountCents > 0
+    }
+
+    func resetToFullBalance() {
+        useCustom = false
+        amountCents = totalBalanceCents
+        for c in charges {
+            allocations[c.id] = Int((c.amount ?? 0).rounded())
+        }
+    }
+
+    func splitEvenly() {
+        guard !charges.isEmpty, amountCents > 0 else { return }
+        let n = charges.count
+        let base = amountCents / n
+        var remainder = amountCents - base * n
+        for c in chargesOldestFirst {
+            let cap = Int((c.amount ?? 0).rounded())
+            var v = min(base, cap)
+            if remainder > 0 && v < cap {
+                let add = min(remainder, cap - v)
+                v += add
+                remainder -= add
+            }
+            allocations[c.id] = v
+        }
+        // If caps absorbed less than amount, push leftover to first under-cap row.
+        var leftover = amountCents - allocatedTotalCents
+        if leftover > 0 {
+            for c in chargesOldestFirst {
+                let cap = Int((c.amount ?? 0).rounded())
+                let cur = allocations[c.id] ?? 0
+                let room = cap - cur
+                if room > 0 {
+                    let add = min(room, leftover)
+                    allocations[c.id] = cur + add
+                    leftover -= add
+                    if leftover == 0 { break }
+                }
+            }
+        }
+    }
+
+    func applyToOldest() {
+        guard amountCents > 0 else { return }
+        var remaining = amountCents
+        for c in chargesOldestFirst {
+            let cap = Int((c.amount ?? 0).rounded())
+            let take = min(cap, remaining)
+            allocations[c.id] = take
+            remaining -= take
+        }
+    }
+
+    func setAllocation(chargeId: String, cents: Int) {
+        let cap = Int(((charges.first { $0.id == chargeId }?.amount) ?? 0).rounded())
+        allocations[chargeId] = max(0, min(cents, cap))
     }
 
     var totalBalanceCents: Int {
@@ -155,12 +253,35 @@ final class PayFlowViewModel {
         guard let method = selectedMethod else { return }
         submitting = true
         submitError = nil
+        // Build the actual list of (chargeId, amount) we need to submit.
+        // - Full balance: one call per charge, full amount each.
+        // - Custom: one call per non-zero allocation.
+        // Legacy single-charge fallback: if we have exactly one entry, use
+        // the existing single-call path (preserves the prior server behavior).
+        let calls: [(chargeId: String?, cents: Int)] = {
+            let active = activeAllocations
+            if active.isEmpty {
+                return [(selectedChargeId, amountCents)]
+            }
+            if active.count == 1 {
+                return [(active[0].charge.id, active[0].cents)]
+            }
+            return active.map { ($0.charge.id, $0.cents) }
+        }()
         do {
-            result = try await MoovPaymentsService.processTransfer(
-                chargeId: selectedChargeId,
-                paymentMethodId: method.payment_method_id,
-                amountCents: amountCents
-            )
+            var lastResult: TransferResult?
+            var totalCharged = 0
+            for call in calls {
+                let r = try await MoovPaymentsService.processTransfer(
+                    chargeId: call.chargeId,
+                    paymentMethodId: method.payment_method_id,
+                    amountCents: call.cents
+                )
+                lastResult = r
+                totalCharged += r.totalCents
+            }
+            self.result = lastResult
+            self.aggregateTotalCents = totalCharged
             path.append(.success)
         } catch {
             submitError = MoovPaymentsService.friendlyMessage(error)
@@ -206,7 +327,8 @@ private struct PayAmountStep: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var customAmountText: String = ""
-    @State private var useCustom: Bool = false
+    /// Per-charge editable text, kept in sync with `vm.allocations`.
+    @State private var allocationTexts: [String: String] = [:]
 
     var body: some View {
         ZStack {
@@ -214,12 +336,14 @@ private struct PayAmountStep: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     titleHeader
-
                     balanceCard
+                    segmentedToggle
 
-                    amountToggle
-
-                    if useCustom { customAmountField }
+                    if vm.useCustom {
+                        customAmountField
+                        allocationToolbar
+                        allocationProgress
+                    }
 
                     if !vm.charges.isEmpty {
                         chargesSection
@@ -230,11 +354,13 @@ private struct PayAmountStep: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 120)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.useCustom)
             }
             .safeAreaInset(edge: .bottom) {
                 continueBar
             }
         }
+        .onAppear { syncAllocationTexts() }
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("Pay")
         .toolbar {
@@ -286,55 +412,150 @@ private struct PayAmountStep: View {
         .shadow(color: Theme.cardDropShadow, radius: 14, x: 0, y: 6)
     }
 
-    private var amountToggle: some View {
-        HStack(spacing: 10) {
-            amountChip(title: "Full balance", subtitle: Fmt.currency(vm.totalBalanceCents), selected: !useCustom) {
-                Haptics.tap()
-                useCustom = false
-                vm.amountCents = vm.totalBalanceCents
-                customAmountText = ""
+    /// Sliding pill segmented control that swaps between full balance and split.
+    private var segmentedToggle: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let segW = (w - 8) / 2
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.chrome(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.chrome(0.06), lineWidth: 0.6)
+                    )
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Theme.premiumCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(Color.chrome(0.12), lineWidth: 0.7)
+                    )
+                    .shadow(color: Color.black.opacity(0.18), radius: 6, y: 2)
+                    .frame(width: segW, height: 44)
+                    .offset(x: vm.useCustom ? segW + 4 : 4)
+                    .padding(.vertical, 4)
+                HStack(spacing: 0) {
+                    segmentLabel(title: "Full balance", subtitle: Fmt.currency(vm.totalBalanceCents), active: !vm.useCustom)
+                        .frame(width: segW)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectFullBalance() }
+                    segmentLabel(title: "Split", subtitle: vm.useCustom ? Fmt.currency(vm.amountCents) : "Custom amount", active: vm.useCustom)
+                        .frame(width: segW)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectCustom() }
+                }
+                .padding(.horizontal, 4)
             }
-            amountChip(title: "Custom", subtitle: useCustom ? Fmt.currency(vm.amountCents) : "Enter amount", selected: useCustom) {
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: vm.useCustom)
+        }
+        .frame(height: 52)
+    }
+
+    private func segmentLabel(title: String, subtitle: String, active: Bool) -> some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(active ? Theme.textPrimary : Color.chrome(0.55))
+            Text(subtitle)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Color.chrome(active ? 0.55 : 0.4))
+                .lineLimit(1)
+        }
+    }
+
+    private func selectFullBalance() {
+        guard vm.useCustom else { return }
+        Haptics.tap()
+        vm.resetToFullBalance()
+        customAmountText = ""
+        syncAllocationTexts()
+    }
+
+    private func selectCustom() {
+        guard !vm.useCustom else { return }
+        Haptics.tap()
+        vm.useCustom = true
+        // Default custom amount to current balance unless user already had one.
+        if vm.amountCents == 0 { vm.amountCents = vm.totalBalanceCents }
+        vm.amountCents = min(vm.amountCents, vm.totalBalanceCents)
+        customAmountText = formattedAmountText(cents: vm.amountCents)
+        // Seed allocations with apply-to-oldest as a sensible default.
+        vm.applyToOldest()
+        syncAllocationTexts()
+    }
+
+    private var allocationToolbar: some View {
+        HStack(spacing: 8) {
+            shortcutButton(icon: "equal", label: "Split evenly") {
                 Haptics.tap()
-                useCustom = true
-                vm.amountCents = min(vm.amountCents, vm.totalBalanceCents)
-                customAmountText = formattedAmountText(cents: vm.amountCents)
+                vm.splitEvenly()
+                syncAllocationTexts()
+            }
+            shortcutButton(icon: "calendar.badge.exclamationmark", label: "Oldest first") {
+                Haptics.tap()
+                vm.applyToOldest()
+                syncAllocationTexts()
             }
         }
     }
 
-    private func amountChip(title: String, subtitle: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func shortcutButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(selected ? Theme.textPrimary : Color.chrome(0.65))
-                Text(subtitle)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color.chrome(0.5))
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                Text(label)
+                    .font(.system(size: 12.5, weight: .semibold))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(selected ? Color.chrome(0.06) : Theme.premiumCard)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(selected ? Theme.textPrimary.opacity(0.5) : Color.chrome(0.06), lineWidth: selected ? 1.2 : 0.6)
-            )
+            .foregroundStyle(Color.chrome(0.7))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Theme.premiumCard))
+            .overlay(Capsule().stroke(Color.chrome(0.08), lineWidth: 0.6))
         }
         .buttonStyle(.plain)
     }
 
+    private var allocationProgress: some View {
+        let balanced = vm.allocatedTotalCents == vm.amountCents && vm.amountCents > 0
+        let tint: Color = balanced ? Color(hex: 0x4CB58C) : Color(hex: 0xE8B454)
+        return HStack(spacing: 8) {
+            Image(systemName: balanced ? "checkmark.circle.fill" : "circle.dotted")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(tint)
+            Text("Allocated \(Fmt.currency(vm.allocatedTotalCents)) of \(Fmt.currency(vm.amountCents))")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Spacer()
+            if !balanced {
+                let diff = vm.amountCents - vm.allocatedTotalCents
+                Text(diff > 0 ? "+\(Fmt.currency(diff)) to go" : "\(Fmt.currency(-diff)) over")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.chrome(0.55))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tint.opacity(0.10))
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: balanced)
+    }
+
     private var customAmountField: some View {
         HStack(spacing: 10) {
+            Text("PAY")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(1.2)
+                .foregroundStyle(Color.chrome(0.45))
+            Spacer()
             Text("$")
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.chrome(0.45))
             TextField("0.00", text: $customAmountText)
                 .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(Theme.textPrimary)
                 .onChange(of: customAmountText) { _, new in
@@ -349,77 +570,160 @@ private struct PayAmountStep: View {
 
     private var chargesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("APPLIES TO")
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(1.2)
-                .foregroundStyle(Color.chrome(0.45))
-                .padding(.top, 4)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("APPLIES TO")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.chrome(0.45))
+                Text(vm.useCustom ? "· Split across" : "· All charges")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.chrome(0.4))
+                Spacer()
+            }
+            .padding(.top, 4)
             VStack(spacing: 8) {
-                ForEach(vm.charges) { c in
+                ForEach(vm.chargesOldestFirst) { c in
                     chargeRow(c)
                 }
+            }
+            if !vm.useCustom {
+                Text("Applied to all \(vm.charges.count) charge\(vm.charges.count == 1 ? "" : "s") · \(Fmt.currency(vm.totalBalanceCents)) total")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.chrome(0.5))
+                    .padding(.top, 2)
+                    .padding(.horizontal, 4)
             }
         }
     }
 
     private func chargeRow(_ c: CommonCharge) -> some View {
         let cents = Int((c.amount ?? 0).rounded())
-        let selected = (vm.selectedChargeId == c.id)
-        return Button {
-            Haptics.tap()
-            vm.selectedChargeId = c.id
-        } label: {
-            HStack(alignment: .center, spacing: 12) {
-                ZStack {
-                    Circle().stroke(Color.chrome(0.2), lineWidth: 1.4)
-                    if selected {
-                        Circle().fill(Theme.textPrimary).frame(width: 10, height: 10)
-                    }
-                }
-                .frame(width: 18, height: 18)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(c.description ?? "Common charge")
-                        .font(.system(size: 14.5, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(2)
-                    if let dd = Fmt.parseDay(c.due_date) ?? Fmt.parseDate(c.due_date) {
+        let due = Fmt.parseDay(c.due_date) ?? Fmt.parseDate(c.due_date)
+        let overdue = (due.map { $0 < Date() } ?? false) && cents > 0
+        let dotColor = categoryDotColor(for: c.description)
+        let allocCents = vm.allocations[c.id] ?? 0
+        let isInPlan = !vm.useCustom || allocCents > 0
+        return HStack(alignment: .center, spacing: 12) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 9, height: 9)
+                .overlay(Circle().stroke(Color.chrome(0.1), lineWidth: 0.5))
+                .opacity(isInPlan ? 1 : 0.35)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(c.description ?? "Common charge")
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let dd = due {
                         Text("Due \(Fmt.short(dd))")
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color.chrome(0.5))
                     }
+                    if overdue {
+                        Text("OVERDUE")
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .tracking(0.7)
+                            .foregroundStyle(Color(hex: 0xF26A6A))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Color(hex: 0xF26A6A).opacity(0.14)))
+                    }
                 }
-                Spacer(minLength: 8)
+            }
+            Spacer(minLength: 8)
+            if vm.useCustom {
+                allocationField(for: c, cap: cents)
+            } else {
                 Text(Fmt.currency(cents))
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.premiumCard))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(selected ? Theme.textPrimary.opacity(0.5) : Color.chrome(0.06), lineWidth: selected ? 1.0 : 0.6)
-            )
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.premiumCard))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.chrome(isInPlan ? 0.08 : 0.04), lineWidth: 0.6)
+        )
+        .opacity(isInPlan ? 1 : 0.6)
+        .animation(.easeInOut(duration: 0.18), value: isInPlan)
+    }
+
+    private func allocationField(for c: CommonCharge, cap: Int) -> some View {
+        let binding = Binding<String>(
+            get: { allocationTexts[c.id] ?? formattedAmountText(cents: vm.allocations[c.id] ?? 0) },
+            set: { new in
+                allocationTexts[c.id] = new
+                let cents = parseCents(new, cap: cap)
+                vm.setAllocation(chargeId: c.id, cents: cents)
+            }
+        )
+        return HStack(spacing: 2) {
+            Text("$")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.chrome(0.4))
+            TextField("0", text: binding)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(minWidth: 60, maxWidth: 92)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.chrome(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.chrome(0.08), lineWidth: 0.6)
+        )
+    }
+
+    private func categoryDotColor(for description: String?) -> Color {
+        let s = (description ?? "").lowercased()
+        if s.contains("assessment") { return Color(hex: 0xC084FC) }
+        if s.contains("monthly") || s.contains("common") { return Color(hex: 0xFF9A2F) }
+        if s.contains("late") || s.contains("fee") { return Color(hex: 0xF26A6A) }
+        return Color(hex: 0x4CB58C)
+    }
+
+    private func syncAllocationTexts() {
+        var next: [String: String] = [:]
+        for c in vm.charges {
+            let cents = vm.allocations[c.id] ?? 0
+            next[c.id] = formattedAmountText(cents: cents)
+        }
+        allocationTexts = next
     }
 
     private var continueBar: some View {
-        let valid = vm.amountCents > 0 && vm.amountCents <= vm.totalBalanceCents
+        let valid = vm.amountCents > 0 && vm.amountCents <= vm.totalBalanceCents && vm.isAllocationBalanced
+        let chargeCount = vm.useCustom ? vm.activeAllocations.count : vm.charges.count
         return Button {
             Haptics.tap()
             onContinue()
         } label: {
             HStack {
-                Text("Continue")
-                    .font(.system(size: 16, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Continue")
+                        .font(.system(size: 16, weight: .semibold))
+                    if chargeCount > 0 {
+                        Text("Across \(chargeCount) charge\(chargeCount == 1 ? "" : "s")")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .opacity(0.85)
+                    }
+                }
                 Spacer()
                 Text(Fmt.currency(vm.amountCents))
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .contentTransition(.numericText())
             }
             .foregroundStyle(Color.white)
             .padding(.horizontal, 18)
-            .padding(.vertical, 15)
+            .padding(.vertical, 13)
             .background(
                 Capsule().fill(
                     LinearGradient(colors: [Color(hex: 0xFFB15E), Color(hex: 0xFF6A00)],
@@ -877,7 +1181,7 @@ private struct PaySuccessStep: View {
                     .font(.system(size: 26, weight: .bold))
                     .tracking(-0.5)
                     .foregroundStyle(Theme.textPrimary)
-                Text(Fmt.currency(vm.result?.totalCents ?? vm.amountCents))
+                Text(Fmt.currency(vm.aggregateTotalCents > 0 ? vm.aggregateTotalCents : (vm.result?.totalCents ?? vm.amountCents)))
                     .font(.system(size: 44, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
                     .tracking(-0.8)

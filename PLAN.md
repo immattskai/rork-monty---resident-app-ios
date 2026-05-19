@@ -1,31 +1,34 @@
-# Redesign the Board Tasks Kanban
+# Redesign the "Make a payment" screen with proper full vs. split allocation
 
-## What changes on the Tasks tab
+## What's wrong today
 
-**Layout**
-- Keep the four columns (Backlog → To Do → In Progress → Done) but make the board feel intentional instead of half-empty.
-- Columns snap one-at-a-time as you swipe left/right (paging), so you always land on a whole column instead of mid-scroll.
-- A slim page indicator below the header shows which column you're on (●○○○) and the column name + count is shown in a clear pill at the top of each page.
-- Each column fills the available width with comfortable side gutters — no more cramped 280-wide cards with a sliver of the next column peeking in.
+The screen lets you pick "Full balance" but still forces you to pick a single charge with a radio button to apply it to. That's confusing and contradicts the action ("I'm paying everything").
 
-**Empty columns**
-- No more big dashed boxes. When a column has no tasks, just a single muted line of text ("Nothing in Backlog") sits quietly under the header, with the blue + button remaining the obvious way to add one.
+## New behavior
 
-**Card style (compact rows)**
-- Each card becomes a tight one-line row: small colored priority dot on the left, task title in the middle (truncates with ellipsis), due date on the right.
-- Overdue due dates turn red. Tasks with no due date simply omit the date.
-- Tap a row → existing detail sheet. Long-press → existing action menu (move, change priority, delete).
-- Cards stack vertically with subtle dividers; the whole column scrolls vertically when there are many.
+**Full balance mode (default)**
 
-**Header polish**
-- Column header shows the column name + a small count chip (e.g. "TO DO · 3") and a thin colored accent line underneath in the column's status color (gray / blue / amber / green).
+- No radio buttons. The charge list becomes a clean read-only summary showing every open charge with its amount and due date.
+- A subtle line under the list reads "Applied to all 3 charges · $1,105.00 total".
+- The payment will be allocated to every open charge automatically (oldest first), so all of them clear in one tap.
 
-**Micro-interactions**
-- Light haptic on column-snap, on long-press, and on status change.
-- Cards fade/slide in on first load.
-- Moving a task to another column animates it leaving the current list.
+**Custom amount mode**
 
-**Floating + button**
-- Unchanged position (bottom-right), slightly tighter shadow so it doesn't bloom on the dark background.
+- Each charge row gets its own small amount field on the right (replacing the radio).
+- The total of those fields must match the custom amount entered above — a live "Allocated $X of $Y" indicator shows progress and turns green when balanced.
+- A quick "Split evenly" / "Apply to oldest" shortcut row sits above the list to fill the fields with one tap.
+- Continue button stays disabled until the allocation matches.
 
-No changes to data, filters, the create sheet, or the detail sheet — purely a visual + interaction overhaul of the board itself.
+## Design refresh
+
+- Replace the two boxy "Full balance / Custom" chips with a single segmented control that visually feels native and animated.
+- Balance card stays, but the giant number gets a soft animated count-up when the mode flips between full and custom.
+- "APPLIES TO" section header gets a small inline hint ("All charges" or "Split across") so the mode is always obvious.
+- Each charge row gets a colored category dot (assessment / monthly / one-off) plus an overdue pill in red when applicable, so the list reads at a glance.
+- Continue button at the bottom shows the total being paid plus a tiny "across N charges" subtitle.
+- Tighter padding, smoother card shadows, haptic tick when toggling modes or balancing the split.
+
+## Screens touched
+
+- The "Make a payment" sheet (first step of the pay flow) — everything above happens here. Method, review, and success steps are unchanged.
+

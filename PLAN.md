@@ -4,8 +4,7 @@ Implement four Board tabs in Swift backed by the shared Supabase backend.
 
 ## Access gate
 - [x] Use `app.isBoardMember` from existing `fetchIsBoardMember` check.
-- [x] Snapshot remains visible to all residents (read-only).
-- [x] Meetings/Tasks/Financials render "Access Restricted" empty state for non-board residents.
+- [x] All tabs (Snapshot/Meetings/Tasks/Financials) are board-only — non-board residents see "Access Restricted".
 
 ## Snapshot
 - [x] Parallel queries: property_units, tickets (last 30d + previous 30d), board_tasks.

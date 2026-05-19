@@ -47,8 +47,8 @@ enum BoardTab: String, CaseIterable, Hashable {
         }
     }
 
-    /// Snapshot is visible to all residents; the rest are board-only.
-    var requiresBoardMembership: Bool { self != .snapshot }
+    /// All Board tabs are board-only.
+    var requiresBoardMembership: Bool { true }
 }
 
 struct BoardView: View {
@@ -110,7 +110,7 @@ struct BoardView: View {
                             .font(.system(size: 28, weight: .bold))
                             .tracking(-0.6)
                             .foregroundStyle(Theme.textPrimary)
-                        Text(app.isBoardMember ? "Governance & oversight" : "Snapshot for residents")
+                        Text("Governance & oversight")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color.chrome(0.55))
                     }

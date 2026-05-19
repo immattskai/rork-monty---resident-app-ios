@@ -385,12 +385,7 @@ struct CommunityPostDetailView: View {
                         .italic()
                         .foregroundStyle(Color.chrome(0.45))
                 } else {
-                    Text(c.content ?? "")
-                        .font(.system(size: 14))
-                        .lineSpacing(2)
-                        .foregroundStyle(Color.chrome(0.85))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    ExpandableCommentText(text: c.content ?? "")
                 }
                 if isMine, c.is_removed != true {
                     Button(role: .destructive) {
@@ -613,5 +608,83 @@ private struct ImageGalleryView: View {
             }
         }
         .onAppear { index = startIndex }
+    }
+}
+
+// MARK: - Expandable comment text
+
+private struct ExpandableCommentText: View {
+    let text: String
+    private let lineLimit: Int = 3
+
+    @State private var expanded: Bool = false
+    @State private var truncatedHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+
+    private var isTruncated: Bool { fullHeight > truncatedHeight + 0.5 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(text)
+                .font(.system(size: 14))
+                .lineSpacing(2)
+                .foregroundStyle(Color.chrome(0.85))
+                .lineLimit(expanded ? nil : lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+
+            if isTruncated {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                } label: {
+                    Text(expanded ? "View less" : "View more")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.chrome(0.55))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(
+            ZStack(alignment: .topLeading) {
+                Text(text)
+                    .font(.system(size: 14))
+                    .lineSpacing(2)
+                    .lineLimit(lineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: CommentTruncatedHeightKey.self, value: proxy.size.height)
+                        }
+                    )
+                Text(text)
+                    .font(.system(size: 14))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: CommentFullHeightKey.self, value: proxy.size.height)
+                        }
+                    )
+            }
+            .hidden()
+            .accessibilityHidden(true)
+        )
+        .onPreferenceChange(CommentTruncatedHeightKey.self) { truncatedHeight = $0 }
+        .onPreferenceChange(CommentFullHeightKey.self) { fullHeight = $0 }
+    }
+}
+
+private struct CommentTruncatedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct CommentFullHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

@@ -104,32 +104,32 @@ struct AtmosphericBackground: View {
         ZStack {
             Theme.background
             if scheme == .dark {
-                // Multi-stop wash: navy lifts off the top, easing through midnight
-                // tones into deep space. Eliminates the hard seam where a 2-stop
-                // gradient used to cut from blue to black.
+                // Black → blue → black wash. Pure near-black at the very top
+                // and bottom, deep navy peaks softly through the middle band.
                 LinearGradient(
                     stops: [
-                        .init(color: Color(hex: 0x0A1230).opacity(0.98), location: 0.00),
-                        .init(color: Color(hex: 0x080F26).opacity(0.96), location: 0.18),
-                        .init(color: Color(hex: 0x060A1C).opacity(0.94), location: 0.34),
-                        .init(color: Color(hex: 0x040713).opacity(0.96), location: 0.52),
-                        .init(color: Color(hex: 0x03050C), location: 0.72),
+                        .init(color: Color(hex: 0x020308), location: 0.00),
+                        .init(color: Color(hex: 0x04060F), location: 0.12),
+                        .init(color: Color(hex: 0x070C20), location: 0.30),
+                        .init(color: Color(hex: 0x0A1230), location: 0.48),
+                        .init(color: Color(hex: 0x070C20), location: 0.66),
+                        .init(color: Color(hex: 0x04060F), location: 0.84),
                         .init(color: Color(hex: 0x020308), location: 1.00)
                     ],
                     startPoint: .top, endPoint: .bottom
                 )
-                // Soft upper glow — wider, lower opacity so it melts into the
-                // gradient instead of stamping a halo on top.
+                // Soft mid-screen blue bloom that reinforces the navy band
+                // without stamping a hard halo.
                 RadialGradient(
-                    colors: [Color(hex: 0x4DA3FF).opacity(0.04), .clear],
-                    center: .init(x: 0.5, y: -0.05),
-                    startRadius: 0, endRadius: 520
+                    colors: [Color(hex: 0x4DA3FF).opacity(0.06), .clear],
+                    center: .init(x: 0.5, y: 0.48),
+                    startRadius: 0, endRadius: 560
                 )
                 .blendMode(.screen)
                 RadialGradient(
-                    colors: [.clear, .black.opacity(0.65)],
+                    colors: [.clear, .black.opacity(0.55)],
                     center: .center,
-                    startRadius: 200, endRadius: 720
+                    startRadius: 240, endRadius: 760
                 )
                 .blendMode(.multiply)
             }

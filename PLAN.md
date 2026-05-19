@@ -1,11 +1,15 @@
-# Soften the atmospheric background gradient
+# Stop tickets refresh from showing a "cancelled" error screen
 
-The deep navy at the top of the screen currently meets the near-black middle in a single straight gradient, which reads as a hard band/cut on darker phones.
+**What's happening**
 
-**Fix**
-- Reshape the dark-mode background so the navy fades into the deep black through several smooth intermediate tones instead of a single two-stop gradient — no more visible seam.
-- Pull the navy peak slightly toward the top so it feels like sky lifting off the horizon, and let the lower 60% of the screen settle into the near-black tone gently.
-- Soften the upper blue glow so it blends into the new gradient instead of stamping on top of it.
-- Light mode stays exactly as-is.
+When you pull down to refresh the Tickets list, the previous request sometimes gets cancelled (normal behavior — a second request supersedes the first). The screen treats that cancellation as a real failure and replaces your entire ticket list with the red "Something went wrong · cancelled · Try again" screen.
 
-Result: a continuous "midnight to deep space" wash with no perceivable cut where the blue meets the black.
+**The fix**
+
+- Ignore cancellation as an error — it isn't one. Your tickets stay on screen and the spinner just goes away.
+- Keep showing real errors (no network, server down, etc.) exactly as before.
+- Also avoid flashing the skeleton list during a pull-to-refresh; the existing tickets should stay visible while the spinner runs, and only update when fresh data arrives.
+
+**Result**
+
+Pull-to-refresh on Tickets behaves like every other refresh in the app — list stays put, spinner shows, list updates. No more accidental error screen.

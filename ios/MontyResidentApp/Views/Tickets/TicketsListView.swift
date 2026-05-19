@@ -10,11 +10,21 @@ final class TicketsListViewModel {
     var filter: TicketFilter = .active
 
     func load(propertyId: String?) async {
-        loading = true; error = nil
+        if tickets.isEmpty { loading = true }
+        error = nil
         do {
             tickets = try await MontyResidentAppService.fetchTickets(propertyId: propertyId)
+        } catch is CancellationError {
+            // Ignored: a newer request superseded this one.
+        } catch let urlErr as URLError where urlErr.code == .cancelled {
+            // Ignored: URLSession cancelled in flight.
         } catch {
-            self.error = error.localizedDescription
+            if !tickets.isEmpty {
+                // Keep showing existing data; cancellations and transient errors
+                // shouldn't wipe the list.
+            } else {
+                self.error = error.localizedDescription
+            }
         }
         loading = false
     }

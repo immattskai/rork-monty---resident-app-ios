@@ -244,12 +244,9 @@ private struct PayAmountStep: View {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.chrome(0.75))
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.chrome(0.08)))
                 }
-                .buttonStyle(.plain)
                 .accessibilityLabel("Close")
             }
         }

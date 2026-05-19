@@ -104,26 +104,25 @@ struct AtmosphericBackground: View {
         ZStack {
             Theme.background
             if scheme == .dark {
-                // Black → blue → black wash. Pure near-black at the very top
-                // and bottom, deep navy peaks softly through the middle band.
+                // Mostly black with a subtle dark-navy hint through the middle
+                // band — just enough depth to avoid feeling flat, no visible band.
                 LinearGradient(
                     stops: [
                         .init(color: Color(hex: 0x020308), location: 0.00),
-                        .init(color: Color(hex: 0x04060F), location: 0.12),
-                        .init(color: Color(hex: 0x070C20), location: 0.30),
-                        .init(color: Color(hex: 0x0A1230), location: 0.48),
-                        .init(color: Color(hex: 0x070C20), location: 0.66),
-                        .init(color: Color(hex: 0x04060F), location: 0.84),
+                        .init(color: Color(hex: 0x030509), location: 0.30),
+                        .init(color: Color(hex: 0x05080F), location: 0.45),
+                        .init(color: Color(hex: 0x060A15), location: 0.52),
+                        .init(color: Color(hex: 0x05080F), location: 0.60),
+                        .init(color: Color(hex: 0x030509), location: 0.75),
                         .init(color: Color(hex: 0x020308), location: 1.00)
                     ],
                     startPoint: .top, endPoint: .bottom
                 )
-                // Soft mid-screen blue bloom that reinforces the navy band
-                // without stamping a hard halo.
+                // Whisper of blue at center for depth — extremely subtle.
                 RadialGradient(
-                    colors: [Color(hex: 0x4DA3FF).opacity(0.06), .clear],
-                    center: .init(x: 0.5, y: 0.48),
-                    startRadius: 0, endRadius: 560
+                    colors: [Color(hex: 0x4DA3FF).opacity(0.025), .clear],
+                    center: .init(x: 0.5, y: 0.5),
+                    startRadius: 0, endRadius: 480
                 )
                 .blendMode(.screen)
                 RadialGradient(

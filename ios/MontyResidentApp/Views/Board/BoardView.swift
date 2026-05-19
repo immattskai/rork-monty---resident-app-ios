@@ -47,8 +47,6 @@ enum BoardTab: String, CaseIterable, Hashable {
         }
     }
 
-    /// All Board tabs are board-only.
-    var requiresBoardMembership: Bool { true }
 }
 
 struct BoardView: View {
@@ -151,18 +149,17 @@ struct BoardView: View {
     @ViewBuilder
     private func tabPill(_ t: BoardTab) -> some View {
         let active = tab == t
-        let locked = t.requiresBoardMembership && !app.isBoardMember
         Button {
             Haptics.tap()
             withAnimation(.easeOut(duration: 0.22)) { tab = t }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: locked ? "lock.fill" : t.icon)
+                Image(systemName: t.icon)
                     .font(.system(size: 12, weight: .semibold))
                 Text(t.title)
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(active ? Color.white : (locked ? Color.chrome(0.40) : Theme.textPrimary))
+            .foregroundStyle(active ? Color.white : Theme.textPrimary)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(
@@ -181,52 +178,18 @@ struct BoardView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        if tab.requiresBoardMembership && !app.isBoardMember {
-            accessRestrictedCard
-        } else {
-            switch tab {
-            case .snapshot:
-                BoardSnapshotTab(propertyId: app.activePropertyId) { jumpTo in
-                    withAnimation(.easeOut(duration: 0.22)) { tab = jumpTo }
-                }
-            case .meetings:
-                meetingsTab
-            case .tasks:
-                BoardTasksTab(propertyId: app.activePropertyId)
-            case .financials:
-                BoardFinancialsTab(propertyId: app.activePropertyId)
+        switch tab {
+        case .snapshot:
+            BoardSnapshotTab(propertyId: app.activePropertyId) { jumpTo in
+                withAnimation(.easeOut(duration: 0.22)) { tab = jumpTo }
             }
+        case .meetings:
+            meetingsTab
+        case .tasks:
+            BoardTasksTab(propertyId: app.activePropertyId)
+        case .financials:
+            BoardFinancialsTab(propertyId: app.activePropertyId)
         }
-    }
-
-    private var accessRestrictedCard: some View {
-        ZStack {
-            premiumCard(radius: 18)
-            VStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.chrome(0.05))
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Color.chrome(0.62))
-                }
-                .frame(width: 56, height: 56)
-                VStack(spacing: 4) {
-                    Text("Access Restricted")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("This view is for board members only. Your account doesn't have board access for this property.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.chrome(0.55))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-                }
-            }
-            .padding(.vertical, 32)
-            .padding(.horizontal, 22)
-            .frame(maxWidth: .infinity)
-        }
-        .clipShape(.rect(cornerRadius: 18))
     }
 
     // MARK: - Meetings

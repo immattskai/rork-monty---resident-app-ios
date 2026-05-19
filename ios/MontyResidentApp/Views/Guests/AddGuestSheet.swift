@@ -58,28 +58,34 @@ struct AddGuestSheet: View {
 
                         section("Phone") {
                             field {
-                                TextField(
-                                    "",
-                                    text: $input.guestPhone,
-                                    prompt: Text("(555) 123-4567").foregroundStyle(Theme.textMuted)
-                                )
-                                .keyboardType(.phonePad)
-                                .textContentType(.none)
-                                .autocorrectionDisabled()
+                                ZStack(alignment: .leading) {
+                                    if input.guestPhone.isEmpty {
+                                        Text("(555) 123-4567")
+                                            .foregroundStyle(Theme.textMuted)
+                                            .allowsHitTesting(false)
+                                    }
+                                    TextField("", text: $input.guestPhone)
+                                        .keyboardType(.phonePad)
+                                        .textContentType(.none)
+                                        .autocorrectionDisabled()
+                                }
                             }
                         }
 
                         section("Email") {
                             field {
-                                TextField(
-                                    "",
-                                    text: $input.guestEmail,
-                                    prompt: Text("guest@example.com").foregroundStyle(Theme.textMuted)
-                                )
-                                .keyboardType(.emailAddress)
-                                .textInputAutocapitalization(.never)
-                                .textContentType(.none)
-                                .autocorrectionDisabled()
+                                ZStack(alignment: .leading) {
+                                    if input.guestEmail.isEmpty {
+                                        Text("guest@example.com")
+                                            .foregroundStyle(Theme.textMuted)
+                                            .allowsHitTesting(false)
+                                    }
+                                    TextField("", text: $input.guestEmail)
+                                        .keyboardType(.emailAddress)
+                                        .textInputAutocapitalization(.never)
+                                        .textContentType(.none)
+                                        .autocorrectionDisabled()
+                                }
                             }
                         }
 
